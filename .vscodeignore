@@ -1,0 +1,30 @@
+# Source — only the bundled output ships. Match by extension, not by name: a
+# sync-conflict copy ("webview 2.ts") once slipped past a per-file list and
+# shipped source in the package.
+src/**
+media/**/*.ts
+node_modules/**
+
+# Sync-conflict duplicates ("style 2.css", "icon 3.png") of any type.
+**/* [0-9].*
+
+# Tooling / config
+.vscode/**
+.devcontainer/**
+.github/**
+esbuild.js
+tsconfig.json
+**/*.map
+**/.DS_Store
+
+# Repo meta
+.gitignore
+.git/**
+.claude/**
+*.code-workspace
+
+# Not needed in the package
+test/**
+docs/**
+image.png
+*.vsix

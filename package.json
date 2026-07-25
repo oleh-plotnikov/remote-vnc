@@ -1,0 +1,414 @@
+{
+  "name": "remote-vnc",
+  "displayName": "Remote VNC",
+  "description": "View and control a remote screen over VNC directly inside VS Code.",
+  "version": "1.0.0",
+  "publisher": "OlehPlotnikov",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.84.0"
+  },
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
+  "keywords": [
+    "vnc",
+    "rfb",
+    "remote",
+    "screen",
+    "desktop",
+    "novnc"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oleh-plotnikov/remote-vnc.git"
+  },
+  "bugs": {
+    "url": "https://github.com/oleh-plotnikov/remote-vnc/issues"
+  },
+  "homepage": "https://github.com/oleh-plotnikov/remote-vnc#readme",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
+  "main": "./dist/extension.js",
+  "icon": "resources/icon.png",
+  "activationEvents": [],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In an untrusted workspace, connections saved in workspace settings are ignored; only user-level (global) connections are offered."
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "remoteVnc.connect",
+        "title": "Connect to Server…",
+        "category": "Remote VNC"
+      },
+      {
+        "command": "remoteVnc.connectSaved",
+        "title": "Connect to Saved Server…",
+        "category": "Remote VNC"
+      },
+      {
+        "command": "remoteVnc.addConnection",
+        "title": "Add Saved Connection…",
+        "category": "Remote VNC",
+        "icon": "$(add)"
+      },
+      {
+        "command": "remoteVnc.forgetPassword",
+        "title": "Forget Saved Password…",
+        "category": "Remote VNC"
+      },
+      {
+        "command": "remoteVnc.disconnect",
+        "title": "Disconnect Active Session",
+        "category": "Remote VNC"
+      },
+      {
+        "command": "remoteVnc.connectConnection",
+        "title": "Connect",
+        "category": "Remote VNC",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "remoteVnc.editConnection",
+        "title": "Edit Connection…",
+        "category": "Remote VNC",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "remoteVnc.deleteConnection",
+        "title": "Delete Connection",
+        "category": "Remote VNC",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "remoteVnc.forgetConnectionPassword",
+        "title": "Forget Password",
+        "category": "Remote VNC",
+        "icon": "$(key)"
+      },
+      {
+        "command": "remoteVnc.revealSession",
+        "title": "Reveal Session",
+        "category": "Remote VNC",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "remoteVnc.disconnectSession",
+        "title": "Disconnect",
+        "category": "Remote VNC",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "remoteVnc.openPage",
+        "title": "Open Web Page…",
+        "category": "Remote VNC"
+      },
+      {
+        "command": "remoteVnc.addPage",
+        "title": "Add Web Page…",
+        "category": "Remote VNC",
+        "icon": "$(add)"
+      },
+      {
+        "command": "remoteVnc.openPageItem",
+        "title": "Open",
+        "category": "Remote VNC",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "remoteVnc.editPage",
+        "title": "Edit Page…",
+        "category": "Remote VNC",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "remoteVnc.deletePage",
+        "title": "Delete Page",
+        "category": "Remote VNC",
+        "icon": "$(trash)"
+      }
+    ],
+    "configuration": {
+      "title": "Remote VNC",
+      "properties": {
+        "remoteVnc.connections": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "Saved VNC connections used by **Remote VNC: Connect to Saved Server…**.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "host"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Display name for the connection."
+              },
+              "host": {
+                "type": "string",
+                "description": "Hostname or IP address of the VNC server."
+              },
+              "port": {
+                "type": "integer",
+                "default": 5900,
+                "minimum": 1,
+                "maximum": 65535,
+                "description": "TCP port of the VNC server (5900 + display number)."
+              },
+              "autoReconnect": {
+                "type": "boolean",
+                "description": "Automatically reconnect (every 10s) if this connection drops unexpectedly. When omitted, the global \"remoteVnc.autoReconnect\" default applies."
+              },
+              "forceRawEncoding": {
+                "type": "boolean",
+                "default": false,
+                "description": "Compatibility mode: advertise only the Raw encoding and no desktop-resize pseudo-encodings. Enable for fixed-function embedded servers that render as a blank screen — their static framebuffer never reaches the viewer otherwise."
+              }
+            }
+          }
+        },
+        "remoteVnc.autoReconnect": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Reconnect automatically (every 10s) when a connection drops unexpectedly. A saved connection's own `autoReconnect` value overrides this default. Reconnecting always stops on authentication failure or a manual disconnect."
+        },
+        "remoteVnc.viewOnly": {
+          "type": "boolean",
+          "default": false,
+          "description": "Connect in view-only mode (ignore local keyboard and mouse input)."
+        },
+        "remoteVnc.scaleViewport": {
+          "type": "boolean",
+          "default": true,
+          "description": "Scale the remote framebuffer to fit the editor panel."
+        },
+        "remoteVnc.resizeSession": {
+          "type": "boolean",
+          "default": false,
+          "description": "Request the server to resize the remote session to match the panel (if supported)."
+        },
+        "remoteVnc.qualityLevel": {
+          "type": "number",
+          "default": 6,
+          "minimum": 0,
+          "maximum": 9,
+          "description": "JPEG quality for the Tight encoding (0 = lowest, 9 = highest)."
+        },
+        "remoteVnc.compressionLevel": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0,
+          "maximum": 9,
+          "description": "Compression level for the Tight encoding (0 = none, 9 = maximum)."
+        },
+        "remoteVnc.showDotCursor": {
+          "type": "boolean",
+          "default": false,
+          "description": "Always show a small dot cursor, even when the server hides the pointer."
+        },
+        "remoteVnc.bridgePort": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 65535,
+          "markdownDescription": "Fixed TCP port for the loopback `WebSocket ↔ TCP` bridge. Needed in a local Dev Container, where an ephemeral port is not forwarded automatically: set a port here and list the same one in `forwardPorts`. A fixed port allows only one session at a time. `0` picks an ephemeral port, which is correct everywhere else."
+        },
+        "remoteVnc.pages": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "Saved web pages opened as clean editor tabs by **Remote VNC: Open Web Page…** (e.g. design-mockup servers). Container-local `localhost` ports are forwarded automatically.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "url"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Display name for the page."
+              },
+              "url": {
+                "type": "string",
+                "description": "Absolute http(s) URL to open."
+              },
+              "width": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 16384,
+                "description": "Optional fixed canvas width — with height set, the page renders at width×height scaled to fit the tab (design mockups). Omit for responsive pages."
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 16384,
+                "description": "Optional fixed canvas height (used together with width)."
+              }
+            }
+          }
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "remote-vnc",
+          "title": "Remote VNC",
+          "icon": "resources/remote-vnc.svg"
+        }
+      ]
+    },
+    "views": {
+      "remote-vnc": [
+        {
+          "id": "remoteVnc.connectionsView",
+          "name": "Saved Connections"
+        },
+        {
+          "id": "remoteVnc.sessionsView",
+          "name": "Active Sessions"
+        },
+        {
+          "id": "remoteVnc.pagesView",
+          "name": "Web Pages"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "remoteVnc.connectionsView",
+        "contents": "No saved connections yet.\n[Add Connection](command:remoteVnc.addConnection)"
+      },
+      {
+        "view": "remoteVnc.pagesView",
+        "contents": "No saved pages yet.\n[Add Web Page](command:remoteVnc.addPage)"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "remoteVnc.connectConnection",
+          "when": "false"
+        },
+        {
+          "command": "remoteVnc.editConnection",
+          "when": "false"
+        },
+        {
+          "command": "remoteVnc.deleteConnection",
+          "when": "false"
+        },
+        {
+          "command": "remoteVnc.forgetConnectionPassword",
+          "when": "false"
+        },
+        {
+          "command": "remoteVnc.revealSession",
+          "when": "false"
+        },
+        {
+          "command": "remoteVnc.disconnectSession",
+          "when": "false"
+        },
+        {
+          "command": "remoteVnc.openPageItem",
+          "when": "false"
+        },
+        {
+          "command": "remoteVnc.editPage",
+          "when": "false"
+        },
+        {
+          "command": "remoteVnc.deletePage",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "remoteVnc.addConnection",
+          "when": "view == remoteVnc.connectionsView",
+          "group": "navigation"
+        },
+        {
+          "command": "remoteVnc.addPage",
+          "when": "view == remoteVnc.pagesView",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "remoteVnc.connectConnection",
+          "when": "view == remoteVnc.connectionsView && viewItem == remoteVnc.connection",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteVnc.editConnection",
+          "when": "view == remoteVnc.connectionsView && viewItem == remoteVnc.connection",
+          "group": "inline@2"
+        },
+        {
+          "command": "remoteVnc.forgetConnectionPassword",
+          "when": "view == remoteVnc.connectionsView && viewItem == remoteVnc.connection",
+          "group": "inline@3"
+        },
+        {
+          "command": "remoteVnc.deleteConnection",
+          "when": "view == remoteVnc.connectionsView && viewItem == remoteVnc.connection",
+          "group": "inline@4"
+        },
+        {
+          "command": "remoteVnc.revealSession",
+          "when": "view == remoteVnc.sessionsView && viewItem == remoteVnc.session",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteVnc.disconnectSession",
+          "when": "view == remoteVnc.sessionsView && viewItem == remoteVnc.session",
+          "group": "inline@2"
+        },
+        {
+          "command": "remoteVnc.openPageItem",
+          "when": "view == remoteVnc.pagesView && viewItem == remoteVnc.page",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteVnc.editPage",
+          "when": "view == remoteVnc.pagesView && viewItem == remoteVnc.page",
+          "group": "inline@2"
+        },
+        {
+          "command": "remoteVnc.deletePage",
+          "when": "view == remoteVnc.pagesView && viewItem == remoteVnc.page",
+          "group": "inline@3"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "node esbuild.js --production",
+    "typecheck": "tsc -p . --noEmit",
+    "test": "node test/run.mjs",
+    "vsce:package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@novnc/novnc": "^1.5.0",
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.84.0",
+    "@types/ws": "^8.5.10",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.4.5",
+    "ws": "^8.17.1"
+  }
+}

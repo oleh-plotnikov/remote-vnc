@@ -1,0 +1,31 @@
+{
+  "name": "remote-vnc-dev",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  // asExternalUri does NOT auto-forward ports in a local Dev Container, so the
+  // bridge uses a fixed port (remoteVnc.bridgePort) that we forward statically
+  // here. The locally-rendered webview then reaches the in-container bridge via
+  // this forwarded localhost port.
+  "forwardPorts": [5959],
+  "portsAttributes": {
+    "5959": { "label": "Remote VNC bridge", "onAutoForward": "silent" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.js-debug",
+        "dbaeumer.vscode-eslint"
+      ],
+      "settings": {
+        "remoteVnc.bridgePort": 5959,
+        "remoteVnc.connections": [
+          { "name": "container-desktop", "host": "127.0.0.1", "port": 5900 },
+          { "name": "appliance", "host": "192.168.1.10", "port": 5900 }
+        ]
+      }
+    }
+  },
+  "postCreateCommand": "npm install && npm run build",
+  "postStartCommand": "/usr/local/bin/start-vnc.sh"
+}

@@ -1,0 +1,79 @@
+:root {
+  color-scheme: dark light;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--vscode-editor-background, #1e1e1e);
+  font-family: var(--vscode-font-family, sans-serif);
+}
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--vscode-editor-background, #1e1e1e);
+}
+
+/* noVNC injects its own canvas; let it size itself. */
+.screen canvas {
+  display: block;
+}
+
+/* Keep the local pointer visible over the screen. In compatibility mode there
+   is no Cursor pseudo-encoding, so noVNC would otherwise hide the cursor
+   (cursor: none); `!important` overrides its inline style so the user can aim. */
+.screen,
+.screen canvas {
+  cursor: default !important;
+}
+
+.status {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  pointer-events: none;
+  user-select: none;
+  background: var(--vscode-editorWidget-background, rgba(40, 40, 40, 0.9));
+  color: var(--vscode-editorWidget-foreground, #ddd);
+  border: 1px solid var(--vscode-editorWidget-border, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.status[data-kind='error'] {
+  background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+  color: var(--vscode-inputValidation-errorForeground, #fff);
+  border-color: var(--vscode-inputValidation-errorBorder, #be1100);
+}
+
+.status[data-kind='reconnecting']::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: rv-spin 0.8s linear infinite;
+}
+
+@keyframes rv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
