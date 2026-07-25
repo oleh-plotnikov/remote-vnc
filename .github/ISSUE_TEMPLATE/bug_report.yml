@@ -1,0 +1,74 @@
+name: Bug report
+description: Something does not work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Found a **security** problem? Please do not file it here — report it
+        privately through
+        [the advisory form](https://github.com/oleh-plotnikov/remote-vnc/security/advisories/new).
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: What you did, what you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: input
+    id: server
+    attributes:
+      label: VNC server
+      description: >
+        Which server, and its version if you know it. Behaviour differs a lot
+        between implementations, so this is usually the first thing worth
+        knowing.
+      placeholder: TigerVNC 1.13, x11vnc, RealVNC, macOS Screen Sharing, an embedded one…
+    validations:
+      required: true
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where is VS Code running
+      description: >
+        The bridge runs next to the extension host, so a remote changes the
+        network path entirely.
+    options:
+      - Locally
+      - Dev Container (local)
+      - Remote-SSH
+      - WSL
+      - Codespaces
+      - Other
+    validations:
+      required: true
+
+  - type: input
+    id: versions
+    attributes:
+      label: Extension and VS Code versions
+      placeholder: Remote VNC 1.0.0, VS Code 1.95.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output channel
+      description: >
+        **View → Output → Remote VNC**. This is where connection diagnostics go
+        and it usually explains the failure on its own.
+      render: text
+
+  - type: textarea
+    id: settings
+    attributes:
+      label: Relevant settings
+      description: >
+        Any `remoteVnc.*` you changed from the default — especially
+        `forceRawEncoding`, `bridgePort` or `resizeSession`. Remove hostnames you
+        would rather not share.
+      render: json

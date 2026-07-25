@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest something the extension should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: >
+        Describe the situation rather than the solution — the underlying problem
+        often has a simpler answer than the feature that first comes to mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you have in mind
+      description: How you imagine it working, if you have a concrete idea.
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: How you cope today
+      description: >
+        An existing setting, another tool, or nothing at all. Useful for judging
+        how much the feature would actually change.

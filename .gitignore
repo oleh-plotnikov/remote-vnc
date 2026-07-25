@@ -7,3 +7,6 @@ media/webview.js.map
 
 # Sync-conflict duplicates ("webview 2.ts") — never part of the project.
 * [0-9].*
+
+# Personal editor workspace files.
+*.code-workspace

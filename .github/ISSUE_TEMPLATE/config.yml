@@ -1,0 +1,10 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/oleh-plotnikov/remote-vnc/security/advisories/new
+    about: Report privately instead of opening a public issue.
+  - name: Encrypting VNC traffic
+    url: https://github.com/oleh-plotnikov/remote-vnc#how-it-works
+    about: >
+      Classic RFB is plaintext by design. Tunnel through SSH and point the
+      extension at the local end.
