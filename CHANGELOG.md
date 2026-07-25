@@ -4,6 +4,14 @@ All notable changes to **Remote VNC** are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-07-25
+
+No change to the extension itself — the shipped code is identical to 1.0.0.
+This release exercises the publishing pipeline end to end and carries the
+repository work done since: issue and pull request templates, a code of
+conduct, a contributor-facing description of the release machinery, and a
+release job that can now be started by hand instead of by moving a tag.
+
 ## [1.0.0] - 2026-07-25
 
 First stable release, and the first published as open source.
