@@ -26,5 +26,6 @@ tsconfig.json
 # Not needed in the package
 test/**
 docs/**
+AGENTS.md
 image.png
 *.vsix
