@@ -4,9 +4,18 @@ name: Release
 # it to the VS Code Marketplace and to Open VSX. Each publish is skipped with a
 # notice until its token exists (VSCE_PAT, OVSX_PAT), so tagging is useful
 # before either is set up, and configuring one does not wait on the other.
+#
+# The same job can be started by hand, which re-runs a publish that was skipped
+# or failed without having to move a tag.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish, e.g. v1.0.0. Defaults to the newest v* tag.'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -16,6 +25,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Tags are what a manual run resolves against, and the default shallow
+          # fetch does not bring them.
+          fetch-depth: 0
+
+      # A manual run has no tag in GITHUB_REF, so settle on one and build from
+      # that exact commit. The input arrives through the environment rather than
+      # by interpolation, so a crafted tag name cannot run shell here.
+      - name: Resolve the tag to build
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            tag="$GITHUB_REF_NAME"
+          elif [ -n "$INPUT_TAG" ]; then
+            tag="$INPUT_TAG"
+          else
+            tag=$(git tag --list 'v*' --sort=-v:refname | head -1)
+          fi
+          if [ -z "$tag" ]; then
+            echo "There is no v* tag to publish." >&2
+            exit 1
+          fi
+          if ! git rev-parse -q --verify "refs/tags/$tag^{commit}" >/dev/null; then
+            echo "Tag $tag does not exist." >&2
+            exit 1
+          fi
+          git checkout --detach --quiet "refs/tags/$tag"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          echo "Building $tag ($(git rev-parse --short HEAD))."
 
       - uses: actions/setup-node@v4
         with:
@@ -30,33 +69,33 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Package VSIX
-        run: npx --yes @vscode/vsce package --no-dependencies
-
       # The tag must describe the same version the manifest does, or the release
       # would advertise a package that reports something else once installed.
       - name: Check the tag matches package.json
         run: |
           manifest=$(node -p "require('./package.json').version")
-          tag="${GITHUB_REF_NAME#v}"
-          if [ "$manifest" != "$tag" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match package.json $manifest." >&2
+          if [ "$manifest" != "${TAG#v}" ]; then
+            echo "Tag $TAG does not match package.json $manifest." >&2
             exit 1
           fi
+
+      - name: Package VSIX
+        run: npx --yes @vscode/vsce package --no-dependencies
 
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" ./*.vsix --clobber
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" ./*.vsix --clobber
           else
-            gh release create "$GITHUB_REF_NAME" ./*.vsix \
-              --title "$GITHUB_REF_NAME" --generate-notes
+            gh release create "$TAG" ./*.vsix --title "$TAG" --generate-notes
           fi
 
       # Both publishers read their token from the environment, so it never
-      # reaches a command line or the logs.
+      # reaches a command line or the logs. A re-publish of a version already in
+      # a registry is not an error worth failing the run over, hence
+      # --skip-duplicate: a manual run exists precisely to retry the other half.
       - name: Publish to the VS Code Marketplace
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
@@ -65,7 +104,8 @@ jobs:
             echo "::notice::VSCE_PAT is not set — skipping the Marketplace publish."
             exit 0
           fi
-          npx --yes @vscode/vsce publish --no-dependencies --packagePath ./*.vsix
+          npx --yes @vscode/vsce publish --no-dependencies --skip-duplicate \
+            --packagePath ./*.vsix
 
       # Open VSX serves the editors that cannot use Microsoft's Marketplace:
       # VSCodium, Cursor, Windsurf, Gitpod. The namespace has to exist before the
@@ -80,4 +120,5 @@ jobs:
           fi
           publisher=$(node -p "require('./package.json').publisher")
           npx --yes ovsx create-namespace "$publisher" || true
-          npx --yes ovsx publish --packagePath ./*.vsix --no-dependencies
+          npx --yes ovsx publish --packagePath ./*.vsix --no-dependencies \
+            --skip-duplicate
