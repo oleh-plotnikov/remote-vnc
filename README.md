@@ -1,6 +1,7 @@
 # Remote VNC
 
 [![Marketplace](https://img.shields.io/visual-studio-marketplace/v/OlehPlotnikov.remote-vnc?label=marketplace)](https://marketplace.visualstudio.com/items?itemName=OlehPlotnikov.remote-vnc)
+[![Open VSX](https://img.shields.io/open-vsx/v/OlehPlotnikov/remote-vnc?label=open%20vsx)](https://open-vsx.org/extension/OlehPlotnikov/remote-vnc)
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/OlehPlotnikov.remote-vnc)](https://marketplace.visualstudio.com/items?itemName=OlehPlotnikov.remote-vnc)
 [![CI](https://github.com/oleh-plotnikov/remote-vnc/actions/workflows/ci.yml/badge.svg)](https://github.com/oleh-plotnikov/remote-vnc/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
@@ -11,6 +12,20 @@ Remote VNC embeds the battle-tested [noVNC](https://github.com/novnc/noVNC) clie
 in a VS Code editor panel and bridges it to any standard VNC/RFB server — no
 external `websockify` proxy required. Connect to a headless server, a container,
 a dev board, or a desktop without leaving your editor.
+
+## Install
+
+Search for **Remote VNC** in the Extensions view, or:
+
+```bash
+code --install-extension OlehPlotnikov.remote-vnc
+```
+
+For VSCodium, Cursor, Windsurf and other editors that do not use Microsoft's
+Marketplace, the same extension is on
+[Open VSX](https://open-vsx.org/extension/OlehPlotnikov/remote-vnc). A `.vsix` is
+attached to every [release](https://github.com/oleh-plotnikov/remote-vnc/releases)
+if you would rather install it by hand.
 
 ## Features
 

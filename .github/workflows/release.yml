@@ -1,8 +1,9 @@
 name: Release
 
 # Tagging v* builds the package, attaches it to a GitHub release, and publishes
-# it to the Marketplace. Publishing is skipped with a notice until the VSCE_PAT
-# secret exists, so tagging is useful even before that token is set up.
+# it to the VS Code Marketplace and to Open VSX. Each publish is skipped with a
+# notice until its token exists (VSCE_PAT, OVSX_PAT), so tagging is useful
+# before either is set up, and configuring one does not wait on the other.
 on:
   push:
     tags: ['v*']
@@ -54,8 +55,8 @@ jobs:
               --title "$GITHUB_REF_NAME" --generate-notes
           fi
 
-      # vsce reads VSCE_PAT from the environment, so the token never reaches the
-      # command line or the logs.
+      # Both publishers read their token from the environment, so it never
+      # reaches a command line or the logs.
       - name: Publish to the VS Code Marketplace
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
@@ -65,3 +66,18 @@ jobs:
             exit 0
           fi
           npx --yes @vscode/vsce publish --no-dependencies --packagePath ./*.vsix
+
+      # Open VSX serves the editors that cannot use Microsoft's Marketplace:
+      # VSCodium, Cursor, Windsurf, Gitpod. The namespace has to exist before the
+      # first publish and creating it again is harmless, so it is not guarded.
+      - name: Publish to Open VSX
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -z "$OVSX_PAT" ]; then
+            echo "::notice::OVSX_PAT is not set — skipping the Open VSX publish."
+            exit 0
+          fi
+          publisher=$(node -p "require('./package.json').publisher")
+          npx --yes ovsx create-namespace "$publisher" || true
+          npx --yes ovsx publish --packagePath ./*.vsix --no-dependencies
