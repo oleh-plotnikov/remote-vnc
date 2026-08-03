@@ -9,6 +9,7 @@ import {
   effectiveAutoReconnect,
   secretKeyFor,
   baseFor,
+  applyConnectionEdit,
 } from './connections';
 import { parseVisibleArea } from './cropLayout';
 import { ConnectionsTreeProvider, ConnectionTreeItem } from './connectionsView';
@@ -273,7 +274,16 @@ async function addConnection(): Promise<void> {
   if (forceRawEncoding === undefined) {
     return;
   }
-  await saveConnection(target, { name: name.trim(), host: parsed.host, port: parsed.port, autoReconnect, forceRawEncoding });
+  await saveConnection(
+    target,
+    applyConnectionEdit(undefined, {
+      name: name.trim(),
+      host: parsed.host,
+      port: parsed.port,
+      autoReconnect,
+      forceRawEncoding,
+    })
+  );
 
   const choice = await vscode.window.showInformationMessage(
     `Remote VNC: saved "${name.trim()}".`,
@@ -327,7 +337,13 @@ async function editConnection(entry: ConnectionEntry): Promise<void> {
   }
   await saveConnection(
     entry.scope,
-    { name: name.trim(), host: parsed.host, port: parsed.port, autoReconnect, forceRawEncoding },
+    applyConnectionEdit(entry, {
+      name: name.trim(),
+      host: parsed.host,
+      port: parsed.port,
+      autoReconnect,
+      forceRawEncoding,
+    }),
     entry.name
   );
 }
