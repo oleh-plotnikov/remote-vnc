@@ -27,6 +27,22 @@ body {
   display: block;
 }
 
+/* visibleArea crop: the clip box windows just the visible panel area; the
+   inner container is sized by layoutCrop so noVNC's own scale-to-fit lands on
+   the crop's scale. Position (not transform) does the clipping, so pointer
+   coordinates keep mapping exactly as noVNC expects. */
+.clipbox {
+  position: relative;
+  overflow: hidden;
+  flex: none;
+}
+
+.clipbox .clipinner {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
 /* Keep the local pointer visible over the screen. In compatibility mode there
    is no Cursor pseudo-encoding, so noVNC would otherwise hide the cursor
    (cursor: none); `!important` overrides its inline style so the user can aim. */

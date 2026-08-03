@@ -194,6 +194,11 @@
               "parkServerCursor": {
                 "type": "boolean",
                 "description": "Park the server-drawn pointer in the bottom-right corner when idle — for touch-screen devices that paint a pointer arrow into the framebuffer. When omitted, the global \"remoteVnc.parkServerCursor\" default applies."
+              },
+              "visibleArea": {
+                "type": "string",
+                "pattern": "^\\s*\\d{1,5}\\s*[x×]\\s*\\d{1,5}\\s*$",
+                "description": "Show only this WIDTHxHEIGHT area of the framebuffer (e.g. \"480x272\"). For servers that advertise a stride-padded framebuffer wider than the visible panel and render the padding as a dead black band. The \"connected\" line in the Remote VNC output logs the advertised size."
               }
             }
           }

@@ -19,6 +19,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the bottom-right corner. Touch-screen devices paint the pointer arrow into
   the framebuffer itself, so it cannot be hidden client-side — parking moves
   it out of the picture instead.
+- **`visibleArea`** (per connection, e.g. `"480x272"`): show only that area
+  of the framebuffer. Some embedded servers advertise a width padded to the
+  display controller's line stride (a 480x272 panel announced as 512x272)
+  and render the padding as a dead black band beside the picture; the crop
+  windows it away without touching noVNC's pointer math. Combined with
+  cursor parking, the parked arrow lands inside the hidden band.
 
 ### Changed
 

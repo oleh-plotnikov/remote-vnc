@@ -57,6 +57,10 @@ export default async function ({ ok, eq }) {
   eq(park[0].parkServerCursor, true, 'parkServerCursor carried through');
   eq(raw[0].parkServerCursor, undefined, 'absent parkServerCursor stays undefined');
 
+  // visibleArea is carried through as the raw string (parsed at connect time)
+  const area = collectConnections({ globalValue: [{ name: 'v', host: 'h', visibleArea: '480x272' }] }, true);
+  eq(area[0].visibleArea, '480x272', 'visibleArea carried through');
+
   // effectiveAutoReconnect: per-connection value wins; absent → global default.
   // Entries saved before the field existed (≤0.1.0) have no value and must
   // inherit the default instead of silently never reconnecting.

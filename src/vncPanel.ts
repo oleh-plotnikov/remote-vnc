@@ -37,6 +37,9 @@ export interface ConnectionRequest {
    *  (like autoReconnect) so every caller resolves the per-connection value
    *  against the `remoteVnc.parkServerCursor` default in doConnect. */
   parkServerCursor: boolean;
+  /** Show only this area of the framebuffer — for servers that advertise a
+   *  stride-padded width and render the padding as a dead band. */
+  visibleArea?: { width: number; height: number };
 }
 
 const VIEW_TYPE = 'remoteVnc.screen';
@@ -237,6 +240,7 @@ class VncSession {
   private readonly autoReconnect: boolean;
   private readonly forceRaw: boolean;
   private readonly parkServerCursor: boolean;
+  private readonly visibleArea?: { width: number; height: number };
   private readonly options: RfbOptions;
   private readonly extensionUri: vscode.Uri;
   private readonly panel: vscode.WebviewPanel;
@@ -261,6 +265,7 @@ class VncSession {
     this.autoReconnect = init.request.autoReconnect;
     this.forceRaw = init.request.forceRawEncoding ?? false;
     this.parkServerCursor = init.request.parkServerCursor;
+    this.visibleArea = init.request.visibleArea;
     this.options = init.options;
     this.extensionUri = init.context.extensionUri;
     this.panel = init.panel;
@@ -285,6 +290,7 @@ class VncSession {
       options: this.options,
       forceRaw: this.forceRaw,
       parkCursor: this.parkServerCursor,
+      crop: this.visibleArea,
     };
   }
 
@@ -380,6 +386,7 @@ class VncSession {
       options: this.options,
       forceRaw: this.forceRaw,
       parkCursor: this.parkServerCursor,
+      crop: this.visibleArea,
     };
     this.panel.webview.html = renderHtml(this.panel.webview, this.extensionUri, established.clientUrl);
   }
@@ -551,7 +558,15 @@ class VncSession {
 }
 
 type ExtensionMessage =
-  | { type: 'connect'; url: string; password?: string; options: RfbOptions; forceRaw?: boolean; parkCursor?: boolean }
+  | {
+      type: 'connect';
+      url: string;
+      password?: string;
+      options: RfbOptions;
+      forceRaw?: boolean;
+      parkCursor?: boolean;
+      crop?: { width: number; height: number };
+    }
   | { type: 'disconnect' }
   | { type: 'reconnecting' }
   | { type: 'screenshot' };

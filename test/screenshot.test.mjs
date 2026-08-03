@@ -3,12 +3,13 @@ import { load } from './bundle.mjs';
 export default async function ({ ok, eq }) {
   const { screenshotFilename, pngBytesFromDataUrl, expandHome } = await load('screenshot.ts');
 
-  // Filenames: label + timestamp, filesystem-safe, unicode labels kept.
+  // Filenames: label + timestamp only (no product prefix), filesystem-safe,
+  // unicode labels kept.
   const at = new Date(2026, 7, 3, 18, 15, 30); // months are 0-based → August
-  eq(screenshotFilename('hmi', at), 'remote-vnc-hmi-20260803-181530.png', 'plain label');
-  eq(screenshotFilename('панель', at), 'remote-vnc-панель-20260803-181530.png', 'unicode label survives');
-  eq(screenshotFilename('a b/c:d', at), 'remote-vnc-a-b-c-d-20260803-181530.png', 'separators collapse to dashes');
-  eq(screenshotFilename('///', at), 'remote-vnc-session-20260803-181530.png', 'empty-after-sanitising falls back');
+  eq(screenshotFilename('hmi', at), 'hmi-20260803-181530.png', 'plain label');
+  eq(screenshotFilename('панель', at), 'панель-20260803-181530.png', 'unicode label survives');
+  eq(screenshotFilename('a b/c:d', at), 'a-b-c-d-20260803-181530.png', 'separators collapse to dashes');
+  eq(screenshotFilename('///', at), 'session-20260803-181530.png', 'empty-after-sanitising falls back');
   ok(!screenshotFilename('..', at).includes('..'), 'dot-dot cannot survive into a name');
   ok(screenshotFilename('x'.repeat(200), at).length < 100, 'long labels are truncated');
 

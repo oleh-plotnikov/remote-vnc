@@ -1,4 +1,5 @@
 import RFB from '@novnc/novnc';
+import { cropLayout } from '../src/cropLayout';
 
 interface RfbOptions {
   viewOnly: boolean;
@@ -10,7 +11,15 @@ interface RfbOptions {
 }
 
 type ExtensionMessage =
-  | { type: 'connect'; url: string; password?: string; options: RfbOptions; forceRaw?: boolean; parkCursor?: boolean }
+  | {
+      type: 'connect';
+      url: string;
+      password?: string;
+      options: RfbOptions;
+      forceRaw?: boolean;
+      parkCursor?: boolean;
+      crop?: { width: number; height: number };
+    }
   | { type: 'disconnect' }
   | { type: 'reconnecting' }
   | { type: 'screenshot' };
@@ -71,9 +80,17 @@ function stopCursorPark(): void {
   }
 }
 
+// The park destination and result are logged (once per connection) so a
+// still-visible arrow can be told apart from parking never running at all:
+// no "cursor parking armed" line means the setting never reached the webview,
+// "parked" with the arrow still in place means the server ignores synthetic
+// pointer moves.
+let parkLogged = false;
+
 function startCursorPark(): void {
   stopCursorPark();
   parked = false;
+  post({ type: 'log', level: 'info', message: 'cursor parking armed' });
   // Parking must not race the user's own pointer: only act after PARK_IDLE_MS
   // of local silence, and only once per idle period. Uses the same noVNC
   // internals as the compat refresh (no public API sends a raw pointer event).
@@ -90,11 +107,72 @@ function startCursorPark(): void {
         messages: { pointerEvent(s: unknown, x: number, y: number, mask: number): void };
       }).messages.pointerEvent(r._sock, r._fbWidth - 1, r._fbHeight - 1, 0);
       parked = true;
+      if (!parkLogged) {
+        parkLogged = true;
+        post({
+          type: 'log',
+          level: 'info',
+          message: `cursor parked at (${r._fbWidth - 1}, ${r._fbHeight - 1})`,
+        });
+      }
     } catch {
       /* internals shifted across a noVNC upgrade — stop parking rather than spam */
+      post({ type: 'log', level: 'error', message: 'cursor parking unavailable (noVNC internals changed)' });
       stopCursorPark();
     }
   }, 1000);
+}
+
+// ---- visibleArea crop: hide a stride-padded framebuffer's dead band -------
+// The server said the framebuffer is (say) 512x272 while the panel is
+// 480x272. noVNC is given a container sized so its OWN scale-to-fit lands on
+// the crop's scale, and an overflow-hidden box around it windows just the
+// visible area. No transforms near the canvas — pointer math stays noVNC's.
+let crop: { width: number; height: number } | undefined;
+let clipbox: HTMLDivElement | undefined;
+let cropInner: HTMLDivElement | undefined;
+let cropObserver: ResizeObserver | undefined;
+let cropLogged = false;
+
+function teardownCrop(): void {
+  cropObserver?.disconnect();
+  cropObserver = undefined;
+  clipbox = undefined;
+  cropInner = undefined;
+}
+
+function layoutCrop(scaleToFit: boolean): void {
+  if (!crop || !clipbox || !cropInner) {
+    return;
+  }
+  const canvas = cropInner.querySelector('canvas');
+  if (!canvas || !canvas.width || !canvas.height) {
+    return;
+  }
+  const l = cropLayout(
+    canvas.width,
+    canvas.height,
+    crop.width,
+    crop.height,
+    screen.clientWidth,
+    screen.clientHeight,
+    scaleToFit
+  );
+  if (!l) {
+    return;
+  }
+  clipbox.style.width = `${l.clipWidth}px`;
+  clipbox.style.height = `${l.clipHeight}px`;
+  cropInner.style.width = `${l.innerWidth}px`;
+  cropInner.style.height = `${l.innerHeight}px`;
+  if (!cropLogged) {
+    cropLogged = true;
+    post({
+      type: 'log',
+      level: 'info',
+      message: `showing ${Math.min(crop.width, canvas.width)}x${Math.min(crop.height, canvas.height)} of the ${canvas.width}x${canvas.height} framebuffer (visibleArea)`,
+    });
+  }
 }
 
 // Patch noVNC's encoding advertisement once. clientEncodings is a static used
@@ -159,6 +237,7 @@ function post(message: unknown): void {
 function disconnect(): void {
   stopCompatRefresh();
   stopCursorPark();
+  teardownCrop();
   if (rfb) {
     try {
       rfb.disconnect();
@@ -179,6 +258,9 @@ function connect(msg: Extract<ExtensionMessage, { type: 'connect' }>): void {
   authFailed = false;
   rawOnly = msg.forceRaw ?? false;
   parkCursor = msg.parkCursor ?? false;
+  parkLogged = false;
+  crop = msg.crop;
+  cropLogged = false;
   // A fresh connection starts idle, so the first park happens right away —
   // the arrow a touch-screen server paints at its resting position should be
   // gone before the operator ever sees it.
@@ -189,8 +271,22 @@ function connect(msg: Extract<ExtensionMessage, { type: 'connect' }>): void {
   const dialedHost = safeHost(msg.url);
   post({ type: 'log', level: 'info', message: `webview connecting to ${dialedHost}` });
 
+  // With a crop, noVNC renders into an inner container whose size layoutCrop
+  // controls, wrapped in an overflow-hidden clip box that the flex-centred
+  // #screen positions like it would the canvas itself.
+  let target: HTMLElement = screen;
+  if (crop) {
+    clipbox = document.createElement('div');
+    clipbox.className = 'clipbox';
+    cropInner = document.createElement('div');
+    cropInner.className = 'clipinner';
+    clipbox.appendChild(cropInner);
+    screen.appendChild(clipbox);
+    target = cropInner;
+  }
+
   try {
-    rfb = new RFB(screen, msg.url, {
+    rfb = new RFB(target, msg.url, {
       credentials: msg.password ? { password: msg.password } : undefined,
       wsProtocols: ['binary'],
     });
@@ -237,6 +333,13 @@ function connect(msg: Extract<ExtensionMessage, { type: 'connect' }>): void {
     }
     if (parkCursor) {
       startCursorPark();
+    }
+    if (crop) {
+      // The framebuffer size is known now — size the clip box, and follow the
+      // panel from here on (noVNC re-autoscales when its container resizes).
+      layoutCrop(msg.options.scaleViewport);
+      cropObserver = new ResizeObserver(() => layoutCrop(msg.options.scaleViewport));
+      cropObserver.observe(screen);
     }
   });
 

@@ -10,6 +10,7 @@ import {
   secretKeyFor,
   baseFor,
 } from './connections';
+import { parseVisibleArea } from './cropLayout';
 import { ConnectionsTreeProvider, ConnectionTreeItem } from './connectionsView';
 import { SessionsTreeProvider, SessionTreeItem } from './sessionsView';
 import { SavedPage, PageEntry, collectPages, basePagesFor, isValidPageUrl } from './pages';
@@ -209,6 +210,7 @@ async function connectEntry(context: vscode.ExtensionContext, entry: ConnectionE
     autoReconnect: entry.autoReconnect,
     forceRawEncoding: entry.forceRawEncoding,
     parkServerCursor: entry.parkServerCursor,
+    visibleArea: parseVisibleArea(entry.visibleArea),
   });
 }
 

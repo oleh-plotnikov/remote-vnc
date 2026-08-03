@@ -9,6 +9,8 @@ export interface SavedConnection {
   autoReconnect?: boolean;
   forceRawEncoding?: boolean;
   parkServerCursor?: boolean;
+  /** Visible panel area "WxH" when the server advertises a padded framebuffer. */
+  visibleArea?: string;
 }
 
 /** A saved connection plus the configuration scope it is defined in. */
@@ -57,6 +59,7 @@ export function collectConnections(
           autoReconnect: c.autoReconnect,
           forceRawEncoding: c.forceRawEncoding,
           parkServerCursor: c.parkServerCursor,
+          visibleArea: c.visibleArea,
           scope,
         });
       }

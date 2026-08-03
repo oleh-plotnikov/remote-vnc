@@ -7,7 +7,8 @@
 
 /**
  * File name for a screenshot of the given connection, e.g.
- * `remote-vnc-hmi-20260803-181530.png`. The label keeps unicode letters and
+ * `hmi-20260803-181530.png` — just the label and a timestamp, nothing else;
+ * the label already says what was captured. It keeps unicode letters and
  * digits (labels are user-given and often non-ASCII) and collapses everything
  * else to a dash — path separators and other filesystem-hostile characters
  * must not survive into a file name.
@@ -21,7 +22,7 @@ export function screenshotFilename(label: string, now: Date): string {
   const stamp =
     `${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}` +
     `-${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`;
-  return `remote-vnc-${safe || 'session'}-${stamp}.png`;
+  return `${safe || 'session'}-${stamp}.png`;
 }
 
 /**
