@@ -4,6 +4,9 @@
 src/**
 media/**/*.ts
 node_modules/**
+# A "nosync" symlink keeps dependencies out of cloud sync on macOS, and vsce
+# records the resolved path, so the pattern above never sees them.
+node_modules.nosync/**
 
 # Sync-conflict duplicates ("style 2.css", "icon 3.png") of any type.
 **/* [0-9].*
