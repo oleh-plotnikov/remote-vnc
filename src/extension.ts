@@ -294,58 +294,147 @@ async function addConnection(): Promise<void> {
   }
 }
 
+type ConnectionField =
+  | 'name'
+  | 'address'
+  | 'autoReconnect'
+  | 'forceRawEncoding'
+  | 'parkServerCursor'
+  | 'visibleArea'
+  | 'done';
+
+/** Describe a tri-state flag: explicit On/Off, or the global default it inherits. */
+function describeFlag(value: boolean | undefined, fallback: boolean): string {
+  if (value === undefined) {
+    return `Default (${fallback ? 'On' : 'Off'})`;
+  }
+  return value ? 'On' : 'Off';
+}
+
+/**
+ * Edit a saved connection through a menu of its properties.
+ *
+ * Each choice writes immediately instead of collecting answers for a final
+ * confirmation: Esc then means "I am done" rather than "discard everything",
+ * and a rename — which removes the previous record — does not depend on the
+ * user reaching the end. The entry is re-read after every write so the values
+ * on screen stay true.
+ *
+ * Inherited flags show the effective value marked as inherited. Showing the
+ * raw absent value would invite the user to confirm it, writing an explicit
+ * false that silences a global default they may later change.
+ */
 async function editConnection(entry: ConnectionEntry): Promise<void> {
-  const name = await vscode.window.showInputBox({
-    title: 'Edit Connection (1/2)',
-    prompt: 'Display name for this connection',
-    value: entry.name,
-    ignoreFocusOut: true,
-    validateInput: (v) => (v.trim() ? undefined : 'A name is required.'),
-  });
-  if (!name) {
-    return;
-  }
+  let current: ConnectionEntry = entry;
+  for (;;) {
+    const items: Array<vscode.QuickPickItem & { id?: ConnectionField }> = [
+      { id: 'name', label: '$(edit) Name', description: current.name },
+      {
+        id: 'address',
+        label: '$(server) Address',
+        description: `${current.host}:${current.port ?? DEFAULT_PORT}`,
+      },
+      {
+        id: 'autoReconnect',
+        label: '$(sync) Auto-reconnect',
+        description: describeFlag(current.autoReconnect, getAutoReconnectDefault()),
+      },
+      {
+        id: 'forceRawEncoding',
+        label: '$(zap) Force raw encoding',
+        description: current.forceRawEncoding ? 'On' : 'Off',
+      },
+      {
+        id: 'parkServerCursor',
+        label: '$(target) Park server cursor',
+        description: describeFlag(current.parkServerCursor, getParkServerCursorDefault()),
+      },
+      {
+        id: 'visibleArea',
+        label: '$(screen-full) Visible area',
+        description: current.visibleArea ?? 'Auto',
+      },
+      { label: '', kind: vscode.QuickPickItemKind.Separator },
+      { id: 'done', label: '$(check) Done' },
+    ];
 
-  const address = await vscode.window.showInputBox({
-    title: 'Edit Connection (2/2)',
-    prompt: 'Server address: host, host:port, or host:display',
-    value: `${entry.host}:${entry.port ?? DEFAULT_PORT}`,
-    ignoreFocusOut: true,
-    validateInput: (v) => (parseAddress(v) ? undefined : 'Enter a valid host (and optional port).'),
-  });
-  if (!address) {
-    return;
-  }
-  const parsed = parseAddress(address);
-  if (!parsed) {
-    return;
-  }
+    const pick = await vscode.window.showQuickPick(items, {
+      title: `Edit Connection — ${current.name}`,
+      placeHolder: 'Pick a property to change',
+    });
+    if (!pick?.id || pick.id === 'done') {
+      return;
+    }
 
-  // Seed with the EFFECTIVE value: a legacy entry without the field follows
-  // the global default, and showing the raw value ("No") would invite the
-  // user to confirm it — writing an explicit false that disables the
-  // reconnect they currently have.
-  const autoReconnect = await promptAutoReconnect(
-    effectiveAutoReconnect(entry.autoReconnect, getAutoReconnectDefault())
-  );
-  if (autoReconnect === undefined) {
-    return;
+    const patch = await promptConnectionField(pick.id, current);
+    if (!patch) {
+      continue;
+    }
+
+    const previousName = current.name;
+    await saveConnection(
+      current.scope,
+      applyConnectionEdit(current, patch),
+      previousName
+    );
+
+    // Settings writes are asynchronous; re-reading is what keeps the menu
+    // honest after a rename or a cleared field.
+    const reread = readConnection(current.scope, patch.name ?? previousName);
+    if (!reread) {
+      return;
+    }
+    current = reread;
   }
-  const forceRawEncoding = await promptForceRaw(entry.forceRawEncoding ?? false);
-  if (forceRawEncoding === undefined) {
-    return;
+}
+
+/** Prompt for one field. Returns the patch to apply, or undefined if cancelled. */
+async function promptConnectionField(
+  field: Exclude<ConnectionField, 'done'>,
+  current: ConnectionEntry
+): Promise<Partial<SavedConnection> | undefined> {
+  switch (field) {
+    case 'name': {
+      const name = await vscode.window.showInputBox({
+        title: 'Name',
+        prompt: 'Display name for this connection',
+        value: current.name,
+        ignoreFocusOut: true,
+        validateInput: (v) => (v.trim() ? undefined : 'A name is required.'),
+      });
+      return name ? { name: name.trim() } : undefined;
+    }
+    case 'address': {
+      const address = await vscode.window.showInputBox({
+        title: 'Address',
+        prompt: 'Server address: host, host:port, or host:display',
+        value: `${current.host}:${current.port ?? DEFAULT_PORT}`,
+        ignoreFocusOut: true,
+        validateInput: (v) =>
+          parseAddress(v) ? undefined : 'Enter a valid host (and optional port).',
+      });
+      const parsed = address ? parseAddress(address) : undefined;
+      return parsed ? { host: parsed.host, port: parsed.port } : undefined;
+    }
+    case 'autoReconnect': {
+      const value = await promptAutoReconnect(
+        effectiveAutoReconnect(current.autoReconnect, getAutoReconnectDefault())
+      );
+      return value === undefined ? undefined : { autoReconnect: value };
+    }
+    case 'forceRawEncoding': {
+      const value = await promptForceRaw(current.forceRawEncoding ?? false);
+      return value === undefined ? undefined : { forceRawEncoding: value };
+    }
+    case 'parkServerCursor': {
+      const value = await promptParkServerCursor(
+        current.parkServerCursor ?? getParkServerCursorDefault()
+      );
+      return value === undefined ? undefined : { parkServerCursor: value };
+    }
+    case 'visibleArea':
+      return promptVisibleArea(current.visibleArea);
   }
-  await saveConnection(
-    entry.scope,
-    applyConnectionEdit(entry, {
-      name: name.trim(),
-      host: parsed.host,
-      port: parsed.port,
-      autoReconnect,
-      forceRawEncoding,
-    }),
-    entry.name
-  );
 }
 
 async function deleteConnection(context: vscode.ExtensionContext, entry: ConnectionEntry): Promise<void> {
@@ -648,6 +737,11 @@ function getAutoReconnectDefault(): boolean {
   return vscode.workspace.getConfiguration('remoteVnc').get<boolean>('autoReconnect', true);
 }
 
+/** The global `remoteVnc.parkServerCursor` default for connections without their own value. */
+function getParkServerCursorDefault(): boolean {
+  return vscode.workspace.getConfiguration('remoteVnc').get<boolean>('parkServerCursor', false);
+}
+
 function promptPassword(prompt = 'VNC password (leave empty if the server has no authentication)'): Thenable<string | undefined> {
   return vscode.window.showInputBox({
     title: 'VNC Authentication',
@@ -687,10 +781,86 @@ async function promptForceRaw(current = false): Promise<boolean | undefined> {
   return pick?.value;
 }
 
+/** Ask whether to park the server-drawn cursor when idle. Returns undefined on cancel. */
+async function promptParkServerCursor(current = false): Promise<boolean | undefined> {
+  const pick = await vscode.window.showQuickPick(
+    [
+      { label: 'No', description: 'Leave the pointer where the server draws it', value: false },
+      { label: 'Yes', description: 'Move it to the bottom-right corner after a few idle seconds', value: true },
+    ],
+    {
+      title: 'Park server cursor',
+      placeHolder: current ? 'Currently: Yes' : 'Currently: No',
+    }
+  );
+  return pick?.value;
+}
+
+/**
+ * Ask for the visible panel area. Returns a patch — `{ visibleArea: undefined }`
+ * means "Auto", which clears the field — or undefined when cancelled. The two
+ * must stay distinguishable: cancelling has to leave the setting alone.
+ */
+async function promptVisibleArea(
+  current: string | undefined
+): Promise<{ visibleArea: string | undefined } | undefined> {
+  const pick = await vscode.window.showQuickPick(
+    [
+      { label: 'Auto', description: 'Show the whole framebuffer', custom: false },
+      {
+        label: 'Custom size…',
+        description: current ? `Currently: ${current}` : 'Crop to a WIDTHxHEIGHT area',
+        custom: true,
+      },
+    ],
+    {
+      title: 'Visible area',
+      placeHolder: current ? `Currently: ${current}` : 'Currently: Auto',
+    }
+  );
+  if (!pick) {
+    return undefined;
+  }
+  if (!pick.custom) {
+    return { visibleArea: undefined };
+  }
+
+  const value = await vscode.window.showInputBox({
+    title: 'Visible area',
+    prompt:
+      'Visible panel size as WIDTHxHEIGHT. The "connected" line in the Remote VNC output reports the size the server advertises.',
+    value: current ?? '',
+    placeHolder: '480x272',
+    ignoreFocusOut: true,
+    validateInput: (v) =>
+      !v.trim() || parseVisibleArea(v) ? undefined : 'Enter a size like 480x272.',
+  });
+  if (value === undefined) {
+    return undefined;
+  }
+  return { visibleArea: value.trim() ? value.trim() : undefined };
+}
+
 /** Read saved connections (scope-tagged, trust-gated, global-precedence). */
 function getSavedConnections(): ConnectionEntry[] {
   const config = vscode.workspace.getConfiguration('remoteVnc');
   return collectConnections(config.inspect<SavedConnection[]>('connections'), vscode.workspace.isTrusted);
+}
+
+/**
+ * Re-read one connection from one scope. The layered reader deduplicates by
+ * name across scopes, so it cannot see a workspace entry shadowed by a global
+ * one — the menu needs the record it is actually writing.
+ */
+function readConnection(
+  target: vscode.ConfigurationTarget,
+  name: string
+): ConnectionEntry | undefined {
+  const config = vscode.workspace.getConfiguration('remoteVnc');
+  const found = baseFor(config.inspect<SavedConnection[]>('connections'), target).find(
+    (c) => c.name === name
+  );
+  return found ? { ...found, scope: target } : undefined;
 }
 
 /**
