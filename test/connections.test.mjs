@@ -1,7 +1,7 @@
 import { load } from './bundle.mjs';
 
 export default async function ({ ok, eq }) {
-  const { collectConnections, isValidPort, secretKeyFor, effectiveAutoReconnect } = await load('connections.ts');
+  const { collectConnections, isValidPort, secretKeyFor, effectiveAutoReconnect, applyConnectionEdit } = await load('connections.ts');
   const G = 1, W = 2; // ConfigurationTarget.Global / Workspace (from the stub)
 
   // isValidPort
@@ -68,4 +68,35 @@ export default async function ({ ok, eq }) {
   eq(effectiveAutoReconnect(undefined, false), false, 'legacy entry inherits default-off');
   eq(effectiveAutoReconnect(false, true), false, 'explicit per-connection No beats default-on');
   eq(effectiveAutoReconnect(true, false), true, 'explicit per-connection Yes beats default-off');
+
+  // applyConnectionEdit: a wizard patch must not delete fields the wizard
+  // never asked about. Editing a connection used to rewrite the record from a
+  // literal, which silently dropped visibleArea and parkServerCursor.
+  const saved = {
+    name: 'hmi',
+    host: '10.0.0.5',
+    port: 5900,
+    visibleArea: '480x272',
+    parkServerCursor: true,
+    scope: G,
+  };
+  const renamed = applyConnectionEdit(saved, { name: 'panel', host: '10.0.0.6' });
+  eq(renamed.visibleArea, '480x272', 'untouched visibleArea survives an edit');
+  eq(renamed.parkServerCursor, true, 'untouched parkServerCursor survives an edit');
+  eq(renamed.name, 'panel', 'the patch wins for fields it names');
+  eq(renamed.host, '10.0.0.6', 'the patch wins for host too');
+  eq(renamed.scope, undefined, 'scope never reaches the written record');
+
+  // An explicit undefined clears — this is how "Auto" removes the crop.
+  const cleared = applyConnectionEdit(saved, { visibleArea: undefined });
+  eq('visibleArea' in cleared, false, 'an explicit undefined removes the key');
+  eq(cleared.parkServerCursor, true, 'clearing one field leaves the others');
+
+  // No base: creating a connection yields exactly the patch.
+  const created = applyConnectionEdit(undefined, { name: 'n', host: 'h' });
+  eq(created, { name: 'n', host: 'h' }, 'no base yields exactly the patch');
+
+  // A base value that is already undefined does not appear as a key.
+  const sparse = applyConnectionEdit({ name: 'n', host: 'h', port: undefined }, {});
+  eq('port' in sparse, false, 'an undefined base field is not written');
 }

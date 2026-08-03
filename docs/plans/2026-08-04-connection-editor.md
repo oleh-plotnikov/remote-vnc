@@ -63,8 +63,7 @@ belongs with, so a later split has an obvious seam.
 **Interfaces:**
 - Consumes: `SavedConnection`, `ConnectionEntry` (already defined at the top
   of `src/connections.ts`).
-- Produces:
-  `applyConnectionEdit(base: Partial<ConnectionEntry> | undefined, patch: Partial<SavedConnection>): SavedConnection`
+- Produces: `applyConnectionEdit` with overloaded signatures (see Step 3)
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -128,8 +127,17 @@ Append to `src/connections.ts`:
  * inherited from `base`. Keys are dropped rather than written as `undefined`
  * so settings.json does not accumulate empty properties, and `scope` — which
  * tags where an entry came from and is not part of the stored shape — never
- * reaches the record.
+ * reaches the record. The overloads enforce that creating a connection from
+ * nothing (base=undefined) requires providing mandatory fields in the patch.
  */
+export function applyConnectionEdit(
+  base: ConnectionEntry | SavedConnection,
+  patch: Partial<SavedConnection>
+): SavedConnection;
+export function applyConnectionEdit(
+  base: undefined,
+  patch: SavedConnection
+): SavedConnection;
 export function applyConnectionEdit(
   base: Partial<ConnectionEntry> | undefined,
   patch: Partial<SavedConnection>
@@ -144,6 +152,11 @@ export function applyConnectionEdit(
   return record as unknown as SavedConnection;
 }
 ```
+
+The overloads keep the internal cast honest: without a base, the patch must be
+a complete `SavedConnection` (including `name` and `host`); with a base, those
+fields are already present.
+
 
 - [ ] **Step 4: Run the tests to verify they pass**
 

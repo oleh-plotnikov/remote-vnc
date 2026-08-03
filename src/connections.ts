@@ -81,6 +81,43 @@ export function effectiveAutoReconnect(
   return perConnection ?? globalDefault;
 }
 
+/**
+ * Merge a wizard's patch onto a saved connection.
+ *
+ * A dialog only knows the fields it asks about. Rebuilding the record from a
+ * literal therefore deletes every other field — which is how an edit used to
+ * erase `visibleArea` and `parkServerCursor`. Merging keeps them.
+ *
+ * A key present in `patch` with the value `undefined` clears that field (the
+ * visible-area "Auto" choice removes the key); a key absent from `patch` is
+ * inherited from `base`. Keys are dropped rather than written as `undefined`
+ * so settings.json does not accumulate empty properties, and `scope` — which
+ * tags where an entry came from and is not part of the stored shape — never
+ * reaches the record. The overloads enforce that creating a connection from
+ * nothing (base=undefined) requires providing mandatory fields in the patch.
+ */
+export function applyConnectionEdit(
+  base: ConnectionEntry | SavedConnection,
+  patch: Partial<SavedConnection>
+): SavedConnection;
+export function applyConnectionEdit(
+  base: undefined,
+  patch: SavedConnection
+): SavedConnection;
+export function applyConnectionEdit(
+  base: Partial<ConnectionEntry> | undefined,
+  patch: Partial<SavedConnection>
+): SavedConnection {
+  const { scope: _scope, ...merged } = { ...(base ?? {}), ...patch };
+  const record: Record<string, unknown> = merged;
+  for (const key of Object.keys(record)) {
+    if (record[key] === undefined) {
+      delete record[key];
+    }
+  }
+  return record as unknown as SavedConnection;
+}
+
 /** Secret-storage key for a connection's password, bound to host:port. */
 export function secretKeyFor(conn: { name: string; host: string; port?: number }): string {
   return `remoteVnc:${conn.name}@${conn.host}:${conn.port ?? DEFAULT_PORT}`;
