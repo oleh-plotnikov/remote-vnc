@@ -407,7 +407,12 @@ class VncSession {
           if (!this.sawConnected) {
             this.sawConnected = true;
             this.connectedAt = Date.now();
-            logger().info(`connected (${this.label}, ${this.host}:${this.port}).`);
+            // The framebuffer size is the advertised one — when it is wider
+            // than the device's visible panel (embedded servers often pad the
+            // width to their line stride), the viewer shows a dead band the
+            // device's own screen does not have.
+            const size = msg.width && msg.height ? `, framebuffer ${msg.width}x${msg.height}` : '';
+            logger().info(`connected (${this.label}, ${this.host}:${this.port}${size}).`);
           }
           this.onStatus('connected');
         } else if (msg.state === 'disconnected' && msg.clean === false && !this.bridgeReasonShown && !this.autoReconnect) {
@@ -553,7 +558,7 @@ type ExtensionMessage =
 
 type WebviewMessage =
   | { type: 'ready' }
-  | { type: 'status'; state: 'connecting' | 'connected' | 'disconnected'; clean?: boolean }
+  | { type: 'status'; state: 'connecting' | 'connected' | 'disconnected'; clean?: boolean; width?: number; height?: number }
   | { type: 'desktopname'; name: string }
   | { type: 'securityfailure'; reason?: string }
   | { type: 'log'; level: 'info' | 'error'; message: string }

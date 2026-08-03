@@ -211,7 +211,17 @@ function connect(msg: Extract<ExtensionMessage, { type: 'connect' }>): void {
 
   rfb.addEventListener('connect', () => {
     setStatus('Connected', 'ok');
-    post({ type: 'status', state: 'connected' });
+    // Report the framebuffer size the server actually advertised (the canvas
+    // is created at exactly that size; CSS scaling does not touch the
+    // attributes). A black band beside an embedded device's screen usually
+    // means this is wider than the visible panel — the number settles it.
+    const canvas = screen.querySelector('canvas');
+    post({
+      type: 'status',
+      state: 'connected',
+      width: canvas?.width,
+      height: canvas?.height,
+    });
     // Recompute the scale once the real framebuffer size is known — the
     // container may have been measured pre-layout (or while the tab was
     // hidden), which bakes in a wrong offset/scale until a window resize.

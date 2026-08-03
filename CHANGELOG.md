@@ -23,7 +23,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - The Output channel now records the whole life of a session, not just its
-  end: a `connected` line when the RFB handshake completes, the connected
+  end: a `connected` line (with the framebuffer size the server advertised —
+  wider than the device's panel explains a dead band beside the picture)
+  when the RFB handshake completes, the connected
   duration on every close, an explicit warning when a bridge closes without
   the handshake ever completing, and a one-time hint pointing at **Force raw
   encoding** when a server drops a connected-but-possibly-blank session —
