@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
+import * as os from 'os';
 import { createBridge, VncBridge } from './vncBridge';
+import { screenshotFilename, pngBytesFromDataUrl, expandHome } from './screenshot';
 import { SessionRegistry, SessionInfo, SessionStatus } from './sessionRegistry';
 import { ReconnectPolicy } from './reconnectPolicy';
 import { describeBridgeClose } from './closeDiagnostics';
@@ -29,6 +31,12 @@ export interface ConnectionRequest {
   /** Advertise only Raw to the server (compatibility with servers whose Tight
    *  output noVNC cannot render, e.g. some embedded appliances). */
   forceRawEncoding?: boolean;
+  /** Park the server-drawn pointer in the bottom-right corner when idle —
+   *  touch-screen devices paint the arrow into the framebuffer itself, so
+   *  moving it aside is the only way to get it out of the picture. Required
+   *  (like autoReconnect) so every caller resolves the per-connection value
+   *  against the `remoteVnc.parkServerCursor` default in doConnect. */
+  parkServerCursor: boolean;
 }
 
 const VIEW_TYPE = 'remoteVnc.screen';
@@ -176,6 +184,27 @@ export class VncSessionManager {
     this.active.dispose();
   }
 
+  /** Screenshot the focused session (palette entry and the panel button). */
+  screenshotActive(): void {
+    if (!this.active) {
+      void vscode.window.showInformationMessage('Remote VNC: no active session to screenshot.');
+      return;
+    }
+    this.active.takeScreenshot();
+  }
+
+  /** Screenshot a specific session (Active Sessions tree button). */
+  screenshotSession(id: string): void {
+    this.sessions.get(id)?.takeScreenshot();
+  }
+
+  /** Screenshot the live session for a target, if one exists (connection row). */
+  screenshotTarget(host: string, port: number): boolean {
+    const session = this.findByTarget(host, port);
+    session?.takeScreenshot();
+    return session !== undefined;
+  }
+
   dispose(): void {
     for (const session of [...this.sessions.values()]) {
       session.dispose();
@@ -207,6 +236,7 @@ class VncSession {
   private readonly password?: string;
   private readonly autoReconnect: boolean;
   private readonly forceRaw: boolean;
+  private readonly parkServerCursor: boolean;
   private readonly options: RfbOptions;
   private readonly extensionUri: vscode.Uri;
   private readonly panel: vscode.WebviewPanel;
@@ -230,6 +260,7 @@ class VncSession {
     this.password = init.request.password;
     this.autoReconnect = init.request.autoReconnect;
     this.forceRaw = init.request.forceRawEncoding ?? false;
+    this.parkServerCursor = init.request.parkServerCursor;
     this.options = init.options;
     this.extensionUri = init.context.extensionUri;
     this.panel = init.panel;
@@ -253,6 +284,7 @@ class VncSession {
       password: this.password,
       options: this.options,
       forceRaw: this.forceRaw,
+      parkCursor: this.parkServerCursor,
     };
   }
 
@@ -347,6 +379,7 @@ class VncSession {
       password: this.password,
       options: this.options,
       forceRaw: this.forceRaw,
+      parkCursor: this.parkServerCursor,
     };
     this.panel.webview.html = renderHtml(this.panel.webview, this.extensionUri, established.clientUrl);
   }
@@ -406,6 +439,82 @@ class VncSession {
           logger().info(`webview: ${msg.message}`);
         }
         break;
+      case 'screenshot':
+        if (msg.error || !msg.dataUrl) {
+          void vscode.window.showWarningMessage(
+            `Remote VNC (${this.label}): could not capture a screenshot — ${msg.error ?? 'no image data'}.`
+          );
+        } else {
+          void this.saveScreenshot(msg.dataUrl);
+        }
+        break;
+    }
+  }
+
+  /** Ask the webview for the current framebuffer as a PNG. */
+  takeScreenshot(): void {
+    void this.post({ type: 'screenshot' });
+  }
+
+  /**
+   * Save a captured PNG. With `remoteVnc.screenshotDirectory` set the file is
+   * written there silently (one click, no dialog); otherwise a save dialog
+   * asks. Either way the paths are on the machine the extension host runs on —
+   * under a remote (WSL, SSH, containers) that is the remote filesystem.
+   */
+  private async saveScreenshot(dataUrl: string): Promise<void> {
+    const bytes = pngBytesFromDataUrl(dataUrl);
+    if (!bytes) {
+      void vscode.window.showWarningMessage(
+        `Remote VNC (${this.label}): the webview returned no usable PNG data.`
+      );
+      return;
+    }
+    const name = screenshotFilename(this.label, new Date());
+    const configured = vscode.workspace
+      .getConfiguration('remoteVnc')
+      .get<string>('screenshotDirectory', '')
+      .trim();
+
+    let uri: vscode.Uri | undefined;
+    if (configured) {
+      const dir = vscode.Uri.file(expandHome(configured, os.homedir()));
+      try {
+        await vscode.workspace.fs.createDirectory(dir);
+        uri = vscode.Uri.joinPath(dir, name);
+      } catch (err) {
+        // An unusable directory should not eat the screenshot — fall back to
+        // asking, with the reason on record.
+        logger().warn(
+          `screenshot: cannot use remoteVnc.screenshotDirectory "${configured}" — ${describeError(err)}; asking instead`
+        );
+      }
+    }
+    if (!uri) {
+      uri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(`${os.homedir()}/${name}`),
+        filters: { 'PNG image': ['png'] },
+      });
+      if (!uri) {
+        return; // cancelled
+      }
+    }
+
+    try {
+      await vscode.workspace.fs.writeFile(uri, bytes);
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `Remote VNC (${this.label}): could not save the screenshot — ${describeError(err)}.`
+      );
+      return;
+    }
+    logger().info(`screenshot saved (${this.label}) -> ${uri.fsPath}`);
+    const choice = await vscode.window.showInformationMessage(
+      `Remote VNC: screenshot saved — ${name}`,
+      'Open'
+    );
+    if (choice === 'Open') {
+      void vscode.commands.executeCommand('vscode.open', uri);
     }
   }
 
@@ -437,16 +546,18 @@ class VncSession {
 }
 
 type ExtensionMessage =
-  | { type: 'connect'; url: string; password?: string; options: RfbOptions; forceRaw?: boolean }
+  | { type: 'connect'; url: string; password?: string; options: RfbOptions; forceRaw?: boolean; parkCursor?: boolean }
   | { type: 'disconnect' }
-  | { type: 'reconnecting' };
+  | { type: 'reconnecting' }
+  | { type: 'screenshot' };
 
 type WebviewMessage =
   | { type: 'ready' }
   | { type: 'status'; state: 'connecting' | 'connected' | 'disconnected'; clean?: boolean }
   | { type: 'desktopname'; name: string }
   | { type: 'securityfailure'; reason?: string }
-  | { type: 'log'; level: 'info' | 'error'; message: string };
+  | { type: 'log'; level: 'info' | 'error'; message: string }
+  | { type: 'screenshot'; dataUrl?: string; error?: string };
 
 function renderHtml(webview: vscode.Webview, extensionUri: vscode.Uri, bridgeUrl: string): string {
   const nonce = crypto.randomBytes(16).toString('base64');

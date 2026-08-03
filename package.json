@@ -70,6 +70,24 @@
         "category": "Remote VNC"
       },
       {
+        "command": "remoteVnc.screenshot",
+        "title": "Take Screenshot",
+        "category": "Remote VNC",
+        "icon": "$(device-camera)"
+      },
+      {
+        "command": "remoteVnc.screenshotSession",
+        "title": "Take Screenshot",
+        "category": "Remote VNC",
+        "icon": "$(device-camera)"
+      },
+      {
+        "command": "remoteVnc.screenshotConnection",
+        "title": "Take Screenshot",
+        "category": "Remote VNC",
+        "icon": "$(device-camera)"
+      },
+      {
         "command": "remoteVnc.connectConnection",
         "title": "Connect",
         "category": "Remote VNC",
@@ -172,6 +190,10 @@
                 "type": "boolean",
                 "default": false,
                 "description": "Compatibility mode: advertise only the Raw encoding and no desktop-resize pseudo-encodings. Enable for fixed-function embedded servers that render as a blank screen — their static framebuffer never reaches the viewer otherwise."
+              },
+              "parkServerCursor": {
+                "type": "boolean",
+                "description": "Park the server-drawn pointer in the bottom-right corner when idle — for touch-screen devices that paint a pointer arrow into the framebuffer. When omitted, the global \"remoteVnc.parkServerCursor\" default applies."
               }
             }
           }
@@ -180,6 +202,16 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Reconnect automatically (every 10s) when a connection drops unexpectedly. A saved connection's own `autoReconnect` value overrides this default. Reconnecting always stops on authentication failure or a manual disconnect."
+        },
+        "remoteVnc.parkServerCursor": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Park the server-drawn mouse pointer in the bottom-right corner after a few seconds of idle. For touch-screen devices whose VNC server paints a pointer arrow into the framebuffer — the arrow is pixels in the image, so it cannot be hidden client-side, only moved out of the way. Sends synthetic pointer moves (also in view-only mode). A saved connection's own `parkServerCursor` value overrides this default."
+        },
+        "remoteVnc.screenshotDirectory": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Folder where **Remote VNC: Take Screenshot** saves PNG files without asking (`~` is expanded; the folder is created if missing). In a remote window (WSL, SSH, containers) this path is on the remote machine. Leave empty to pick a location every time."
         },
         "remoteVnc.viewOnly": {
           "type": "boolean",
@@ -300,6 +332,14 @@
           "when": "false"
         },
         {
+          "command": "remoteVnc.screenshotSession",
+          "when": "false"
+        },
+        {
+          "command": "remoteVnc.screenshotConnection",
+          "when": "false"
+        },
+        {
           "command": "remoteVnc.editConnection",
           "when": "false"
         },
@@ -344,6 +384,13 @@
           "group": "navigation"
         }
       ],
+      "editor/title": [
+        {
+          "command": "remoteVnc.screenshot",
+          "when": "activeWebviewPanelId == remoteVnc.screen",
+          "group": "navigation"
+        }
+      ],
       "view/item/context": [
         {
           "command": "remoteVnc.connectConnection",
@@ -351,19 +398,24 @@
           "group": "inline@1"
         },
         {
-          "command": "remoteVnc.editConnection",
+          "command": "remoteVnc.screenshotConnection",
           "when": "view == remoteVnc.connectionsView && viewItem == remoteVnc.connection",
           "group": "inline@2"
         },
         {
-          "command": "remoteVnc.forgetConnectionPassword",
+          "command": "remoteVnc.editConnection",
           "when": "view == remoteVnc.connectionsView && viewItem == remoteVnc.connection",
           "group": "inline@3"
         },
         {
-          "command": "remoteVnc.deleteConnection",
+          "command": "remoteVnc.forgetConnectionPassword",
           "when": "view == remoteVnc.connectionsView && viewItem == remoteVnc.connection",
           "group": "inline@4"
+        },
+        {
+          "command": "remoteVnc.deleteConnection",
+          "when": "view == remoteVnc.connectionsView && viewItem == remoteVnc.connection",
+          "group": "inline@5"
         },
         {
           "command": "remoteVnc.revealSession",
@@ -371,9 +423,14 @@
           "group": "inline@1"
         },
         {
-          "command": "remoteVnc.disconnectSession",
+          "command": "remoteVnc.screenshotSession",
           "when": "view == remoteVnc.sessionsView && viewItem == remoteVnc.session",
           "group": "inline@2"
+        },
+        {
+          "command": "remoteVnc.disconnectSession",
+          "when": "view == remoteVnc.sessionsView && viewItem == remoteVnc.session",
+          "group": "inline@3"
         },
         {
           "command": "remoteVnc.openPageItem",

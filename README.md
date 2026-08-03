@@ -49,6 +49,7 @@ Open the Command Palette (`Ctrl/Cmd+Shift+P`) and run one of:
 | **Remote VNC: Connect to Saved Server…** | Pick from your saved connections. |
 | **Remote VNC: Add Saved Connection…** | Save a named connection for reuse. |
 | **Remote VNC: Disconnect Active Session** | Close the focused session. |
+| **Remote VNC: Take Screenshot** | Save the current framebuffer as a PNG. Also a 📷 button on connection and session rows and on the viewer tab. |
 
 ### Address formats
 
@@ -61,7 +62,7 @@ Open the Command Palette (`Ctrl/Cmd+Shift+P`) and run one of:
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `remoteVnc.connections` | `[]` | Saved connections (`name`, `host`, `port`, optional `autoReconnect`, `forceRawEncoding`). |
+| `remoteVnc.connections` | `[]` | Saved connections (`name`, `host`, `port`, optional `autoReconnect`, `forceRawEncoding`, `parkServerCursor`). |
 | `remoteVnc.autoReconnect` | `true` | Reconnect every 10 s after an unexpected drop. A connection's own `autoReconnect` overrides this. Stops on auth failure or manual disconnect. |
 | `remoteVnc.viewOnly` | `false` | Ignore local input. |
 | `remoteVnc.scaleViewport` | `true` | Scale the framebuffer to fit the panel. |
@@ -69,6 +70,8 @@ Open the Command Palette (`Ctrl/Cmd+Shift+P`) and run one of:
 | `remoteVnc.qualityLevel` | `6` | Tight JPEG quality (0–9). |
 | `remoteVnc.compressionLevel` | `2` | Tight compression (0–9). |
 | `remoteVnc.showDotCursor` | `false` | Always show a dot cursor. |
+| `remoteVnc.parkServerCursor` | `false` | Park the server-drawn pointer in the bottom-right corner when idle — for touch-screen devices that paint an arrow into the framebuffer. Per-connection `parkServerCursor` overrides this. |
+| `remoteVnc.screenshotDirectory` | `""` | Folder for one-click screenshot saves (`~` allowed; on the remote under WSL/SSH/containers). Empty = ask every time. |
 | `remoteVnc.bridgePort` | `0` | Fixed bridge port for a **local Dev Container** (see below); `0` = ephemeral. |
 
 ## How it works

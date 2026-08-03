@@ -51,6 +51,12 @@ export default async function ({ ok, eq }) {
   const raw = collectConnections({ globalValue: [{ name: 'r', host: 'h', forceRawEncoding: true }] }, true);
   eq(raw[0].forceRawEncoding, true, 'forceRawEncoding carried through');
 
+  // parkServerCursor is carried through (dropping it here would silently
+  // disable per-connection cursor parking)
+  const park = collectConnections({ globalValue: [{ name: 'p2', host: 'h', parkServerCursor: true }] }, true);
+  eq(park[0].parkServerCursor, true, 'parkServerCursor carried through');
+  eq(raw[0].parkServerCursor, undefined, 'absent parkServerCursor stays undefined');
+
   // effectiveAutoReconnect: per-connection value wins; absent → global default.
   // Entries saved before the field existed (≤0.1.0) have no value and must
   // inherit the default instead of silently never reconnecting.

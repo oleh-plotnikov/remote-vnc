@@ -6,6 +6,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Screenshots.** A camera button on saved-connection rows, active-session
+  rows and the viewer tab (plus **Remote VNC: Take Screenshot** in the
+  palette) saves the current framebuffer as a PNG. With
+  `remoteVnc.screenshotDirectory` set, saving is one click with no dialog;
+  otherwise a save dialog asks. Under a remote (WSL, SSH, containers) the
+  file lands on the remote filesystem.
+- **`parkServerCursor`** (global default plus per-connection override): after
+  a few seconds of pointer idle, the server-drawn mouse pointer is parked in
+  the bottom-right corner. Touch-screen devices paint the pointer arrow into
+  the framebuffer itself, so it cannot be hidden client-side — parking moves
+  it out of the picture instead.
+
 ### Changed
 
 - The Output channel now records the whole life of a session, not just its

@@ -8,6 +8,7 @@ export interface SavedConnection {
   port?: number;
   autoReconnect?: boolean;
   forceRawEncoding?: boolean;
+  parkServerCursor?: boolean;
 }
 
 /** A saved connection plus the configuration scope it is defined in. */
@@ -55,6 +56,7 @@ export function collectConnections(
           port: c.port,
           autoReconnect: c.autoReconnect,
           forceRawEncoding: c.forceRawEncoding,
+          parkServerCursor: c.parkServerCursor,
           scope,
         });
       }

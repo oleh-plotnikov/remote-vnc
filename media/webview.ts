@@ -10,9 +10,10 @@ interface RfbOptions {
 }
 
 type ExtensionMessage =
-  | { type: 'connect'; url: string; password?: string; options: RfbOptions; forceRaw?: boolean }
+  | { type: 'connect'; url: string; password?: string; options: RfbOptions; forceRaw?: boolean; parkCursor?: boolean }
   | { type: 'disconnect' }
-  | { type: 'reconnecting' };
+  | { type: 'reconnecting' }
+  | { type: 'screenshot' };
 
 interface VsCodeApi {
   postMessage(message: unknown): void;
@@ -41,6 +42,60 @@ let authFailed = false;
 // freeze on the first frame (and the server-rendered cursor would stay stuck).
 let rawOnly = false;
 let compatRefreshTimer: ReturnType<typeof setInterval> | undefined;
+
+// Cursor parking (per-connection "park server cursor"): touch-screen devices
+// often paint a pointer arrow into the framebuffer itself (there is no
+// client-side cursor to hide — the arrow is pixels in the image). The only
+// remedy is to move it: once the local pointer has been idle for a moment,
+// send a synthetic pointer move to the bottom-right corner so the arrow tucks
+// away to a one-pixel sliver.
+let parkCursor = false;
+let parkTimer: ReturnType<typeof setInterval> | undefined;
+let parked = false;
+let lastLocalPointer = 0;
+const PARK_IDLE_MS = 3000;
+
+function markLocalPointer(): void {
+  lastLocalPointer = Date.now();
+  parked = false;
+}
+// Capture phase so noVNC's own handlers cannot swallow the events first.
+for (const ev of ['pointermove', 'pointerdown', 'pointerup', 'wheel'] as const) {
+  screen.addEventListener(ev, markLocalPointer, { capture: true, passive: true });
+}
+
+function stopCursorPark(): void {
+  if (parkTimer !== undefined) {
+    clearInterval(parkTimer);
+    parkTimer = undefined;
+  }
+}
+
+function startCursorPark(): void {
+  stopCursorPark();
+  parked = false;
+  // Parking must not race the user's own pointer: only act after PARK_IDLE_MS
+  // of local silence, and only once per idle period. Uses the same noVNC
+  // internals as the compat refresh (no public API sends a raw pointer event).
+  parkTimer = setInterval(() => {
+    const r = rfb as unknown as { _sock?: unknown; _fbWidth?: number; _fbHeight?: number } | undefined;
+    if (!r || !r._sock || !r._fbWidth || !r._fbHeight) {
+      return;
+    }
+    if (parked || Date.now() - lastLocalPointer < PARK_IDLE_MS) {
+      return;
+    }
+    try {
+      (RFB as unknown as {
+        messages: { pointerEvent(s: unknown, x: number, y: number, mask: number): void };
+      }).messages.pointerEvent(r._sock, r._fbWidth - 1, r._fbHeight - 1, 0);
+      parked = true;
+    } catch {
+      /* internals shifted across a noVNC upgrade — stop parking rather than spam */
+      stopCursorPark();
+    }
+  }, 1000);
+}
 
 // Patch noVNC's encoding advertisement once. clientEncodings is a static used
 // during the RFB handshake; filtering it (keeping codes <= 1: Raw=0, CopyRect=1,
@@ -103,6 +158,7 @@ function post(message: unknown): void {
 
 function disconnect(): void {
   stopCompatRefresh();
+  stopCursorPark();
   if (rfb) {
     try {
       rfb.disconnect();
@@ -122,6 +178,11 @@ function connect(msg: Extract<ExtensionMessage, { type: 'connect' }>): void {
   setStatus('Connecting…', 'info');
   authFailed = false;
   rawOnly = msg.forceRaw ?? false;
+  parkCursor = msg.parkCursor ?? false;
+  // A fresh connection starts idle, so the first park happens right away —
+  // the arrow a touch-screen server paints at its resting position should be
+  // gone before the operator ever sees it.
+  lastLocalPointer = 0;
 
   // Diagnostic: the host the webview actually dials. In a remote window this
   // must be a forwarded authority, not 127.0.0.1 (the webview runs locally).
@@ -163,6 +224,9 @@ function connect(msg: Extract<ExtensionMessage, { type: 'connect' }>): void {
     // full updates so the view stays live (and the server cursor tracks).
     if (rawOnly) {
       startCompatRefresh();
+    }
+    if (parkCursor) {
+      startCursorPark();
     }
   });
 
@@ -225,6 +289,20 @@ window.addEventListener('message', (event: MessageEvent<ExtensionMessage>) => {
     disconnect();
     if (!authFailed) {
       setStatus('Reconnecting…', 'reconnecting');
+    }
+  } else if (msg.type === 'screenshot') {
+    // The framebuffer only exists here, in noVNC's canvas — capture it as a
+    // PNG data URL and let the host do the saving (webviews cannot touch the
+    // filesystem).
+    const canvas = screen.querySelector('canvas');
+    if (!rfb || !canvas) {
+      post({ type: 'screenshot', error: 'No active connection to capture.' });
+    } else {
+      try {
+        post({ type: 'screenshot', dataUrl: canvas.toDataURL('image/png') });
+      } catch (err) {
+        post({ type: 'screenshot', error: describe(err) });
+      }
     }
   }
 });

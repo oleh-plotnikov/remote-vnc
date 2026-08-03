@@ -46,6 +46,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('remoteVnc.addConnection', () => addConnection()),
     vscode.commands.registerCommand('remoteVnc.forgetPassword', () => forgetPassword(context)),
     vscode.commands.registerCommand('remoteVnc.disconnect', () => manager.disconnectActive()),
+    vscode.commands.registerCommand('remoteVnc.screenshot', () => manager.screenshotActive()),
     // Tree-only commands: hidden from the Command Palette via the
     // `commandPalette` menu gate, and guarded here in case they are invoked
     // without a tree item.
@@ -77,6 +78,21 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('remoteVnc.disconnectSession', (item?: SessionTreeItem) => {
       if (item) {
         manager.disconnect(item.session.id);
+      }
+    }),
+    vscode.commands.registerCommand('remoteVnc.screenshotSession', (item?: SessionTreeItem) => {
+      if (item) {
+        manager.screenshotSession(item.session.id);
+      }
+    }),
+    vscode.commands.registerCommand('remoteVnc.screenshotConnection', (item?: ConnectionTreeItem) => {
+      if (!item) {
+        return;
+      }
+      if (!manager.screenshotTarget(item.entry.host, item.entry.port ?? DEFAULT_PORT)) {
+        void vscode.window.showInformationMessage(
+          `Remote VNC: "${item.entry.name}" is not connected — connect first, then take the screenshot.`
+        );
       }
     }),
     // Web pages — saved URLs (design mockups, local dev servers) opened as
@@ -192,6 +208,7 @@ async function connectEntry(context: vscode.ExtensionContext, entry: ConnectionE
     label: entry.name,
     autoReconnect: entry.autoReconnect,
     forceRawEncoding: entry.forceRawEncoding,
+    parkServerCursor: entry.parkServerCursor,
   });
 }
 
@@ -570,8 +587,11 @@ async function savePage(
   await config.update('pages', next, target);
 }
 
-/** A connect request before the auto-reconnect default has been applied. */
-type ConnectInput = Omit<ConnectionRequest, 'autoReconnect'> & { autoReconnect?: boolean };
+/** A connect request before the global defaults have been applied. */
+type ConnectInput = Omit<ConnectionRequest, 'autoReconnect' | 'parkServerCursor'> & {
+  autoReconnect?: boolean;
+  parkServerCursor?: boolean;
+};
 
 /** Apply the unencrypted-traffic warning (once) and then open the session. */
 async function doConnect(context: vscode.ExtensionContext, request: ConnectInput): Promise<void> {
@@ -589,12 +609,18 @@ async function doConnect(context: vscode.ExtensionContext, request: ConnectInput
       await context.globalState.update(PLAINTEXT_WARNING_KEY, true);
     }
   }
-  // Resolve auto-reconnect here, the single funnel for every connect path, so
-  // ad-hoc connects and saved entries without the field follow the global
-  // default. ConnectionRequest requires the resolved boolean, so a future
-  // caller of manager.connect cannot skip this step.
+  // Resolve the per-connection-or-global defaults here, the single funnel for
+  // every connect path, so ad-hoc connects and saved entries without the
+  // fields follow the global settings. ConnectionRequest requires the
+  // resolved booleans, so a future caller of manager.connect cannot skip this.
   await manager.connect(
-    { ...request, autoReconnect: effectiveAutoReconnect(request.autoReconnect, getAutoReconnectDefault()) },
+    {
+      ...request,
+      autoReconnect: effectiveAutoReconnect(request.autoReconnect, getAutoReconnectDefault()),
+      parkServerCursor:
+        request.parkServerCursor ??
+        vscode.workspace.getConfiguration('remoteVnc').get<boolean>('parkServerCursor', false),
+    },
     getRfbOptions()
   );
 }
