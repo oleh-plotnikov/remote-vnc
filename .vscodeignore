@@ -20,10 +20,13 @@ tsconfig.json
 **/*.map
 **/.DS_Store
 
-# Repo meta
+# Repo meta. Being git-ignored is not enough — vsce reads this file, not
+# .gitignore, so scratch directories have to be named here too or their
+# contents ship inside the package.
 .gitignore
 .git/**
 .claude/**
+.superpowers/**
 *.code-workspace
 
 # Not needed in the package
