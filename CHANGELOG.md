@@ -4,6 +4,23 @@ All notable changes to **Remote VNC** are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- The Output channel now records the whole life of a session, not just its
+  end: a `connected` line when the RFB handshake completes, the connected
+  duration on every close, an explicit warning when a bridge closes without
+  the handshake ever completing, and a one-time hint pointing at **Force raw
+  encoding** when a server drops a connected-but-possibly-blank session —
+  the signature of fixed-function embedded servers. Previously the log went
+  silent between the webview's "connecting" line and a terse "bridge closed
+  cleanly", which made those failures indistinguishable.
+- The note logged when `asExternalUri` leaves the bridge's loopback URL
+  unchanged now says that WSL, like local Dev Containers, usually forwards
+  the port under the same address — that situation is normal there, not a
+  hint that something is broken.
+
 ## [1.0.1] - 2026-07-25
 
 No change to the extension itself — the shipped code is identical to 1.0.0.

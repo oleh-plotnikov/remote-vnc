@@ -3,6 +3,7 @@ import * as crypto from 'crypto';
 import { createBridge, VncBridge } from './vncBridge';
 import { SessionRegistry, SessionInfo, SessionStatus } from './sessionRegistry';
 import { ReconnectPolicy } from './reconnectPolicy';
+import { describeBridgeClose } from './closeDiagnostics';
 import { brandIconPath } from './brandIcon';
 import { logger } from './log';
 
@@ -215,6 +216,12 @@ class VncSession {
   private bridge: VncBridge;
   private reconnectTimer: NodeJS.Timeout | undefined;
   private authFailed = false;
+  /** The RFB handshake completed on the current bridge (webview said connected). */
+  private sawConnected = false;
+  /** When the current bridge reached connected, for durations in close logs. */
+  private connectedAt: number | undefined;
+  /** The "force raw encoding" hint has been logged once for this session. */
+  private rawHintShown = false;
 
   constructor(init: VncSessionInit) {
     this.host = init.request.host;
@@ -267,12 +274,27 @@ class VncSession {
       disposed: this.disposed,
       authFailed: this.authFailed,
     });
+    // What to log depends on how far this bridge got: a close before the RFB
+    // handshake ever completed, or a clean server-side drop of a session that
+    // did connect (the blank-screen signature "force raw encoding" fixes),
+    // are called out explicitly — see closeDiagnostics.
+    const diag = describeBridgeClose({
+      label: this.label,
+      target: `${this.host}:${this.port}`,
+      reason,
+      sawConnected: this.sawConnected,
+      connectedMs: this.connectedAt === undefined ? undefined : Date.now() - this.connectedAt,
+      forceRaw: this.forceRaw,
+      willReconnect: decision.action === 'reconnect',
+      reconnectSeconds: RECONNECT_INTERVAL_MS / 1000,
+      rawHintShown: this.rawHintShown,
+    });
+    logger()[diag.level](diag.message);
+    if (diag.hint) {
+      logger().info(diag.hint);
+    }
+    this.rawHintShown = diag.rawHintShown;
     if (decision.action === 'reconnect') {
-      if (reason) {
-        logger().info(`bridge dropped (${this.label}, ${this.host}:${this.port}): ${reason} — reconnecting in ${RECONNECT_INTERVAL_MS / 1000}s`);
-      } else {
-        logger().info(`bridge dropped (${this.label}, ${this.host}:${this.port}) — reconnecting in ${RECONNECT_INTERVAL_MS / 1000}s`);
-      }
       this.scheduleReconnect(decision.delayMs);
       return;
     }
@@ -280,10 +302,7 @@ class VncSession {
     void this.post({ type: 'disconnect' });
     if (reason) {
       this.bridgeReasonShown = true;
-      logger().error(`bridge closed (${this.label}, ${this.host}:${this.port}): ${reason}`);
       void vscode.window.showWarningMessage(`Remote VNC (${this.label}): ${reason}`);
-    } else {
-      logger().info(`bridge closed cleanly (${this.label}, ${this.host}:${this.port}).`);
     }
   }
 
@@ -319,6 +338,9 @@ class VncSession {
     this.bridge = established.bridge;
     this.wireBridge(this.bridge);
     this.bridgeReasonShown = false;
+    // A fresh bridge means a fresh handshake; connection state starts over.
+    this.sawConnected = false;
+    this.connectedAt = undefined;
     this.pendingConnect = {
       type: 'connect',
       url: established.clientUrl,
@@ -346,6 +368,14 @@ class VncSession {
         break;
       case 'status':
         if (msg.state === 'connected') {
+          // The one place the extension host learns the RFB handshake
+          // completed — logged so the Output channel shows how far a session
+          // got, not just that it eventually closed.
+          if (!this.sawConnected) {
+            this.sawConnected = true;
+            this.connectedAt = Date.now();
+            logger().info(`connected (${this.label}, ${this.host}:${this.port}).`);
+          }
           this.onStatus('connected');
         } else if (msg.state === 'disconnected' && msg.clean === false && !this.bridgeReasonShown && !this.autoReconnect) {
           logger().error(`webview reported an unclean disconnect (target ${this.host}:${this.port}).`);
@@ -525,10 +555,10 @@ export async function toWebviewWsUrl(
         unchangedAuthorityNoted.add(ws.authority);
         logger().warn(
           `tunnel: asExternalUri left ${ws.authority} unchanged in a remote window (${remote}). ` +
-            'Local Dev Containers forward the port automatically under the same address, so if the ' +
-            'viewer connects this is fine. If it cannot connect, set "remoteVnc.bridgePort" to a fixed ' +
-            'port and forward it (forwardPorts in devcontainer.json, or the Ports panel). ' +
-            'See README → "Running on a remote".'
+            'Local Dev Containers and WSL usually forward the port automatically under the same ' +
+            'address, so if the viewer connects this is fine. If it cannot connect, set ' +
+            '"remoteVnc.bridgePort" to a fixed port and forward it (forwardPorts in ' +
+            'devcontainer.json, or the Ports panel). See README → "Running on a remote".'
         );
       }
     }
