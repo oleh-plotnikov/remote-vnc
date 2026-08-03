@@ -34,7 +34,9 @@ if you would rather install it by hand.
   `TCP ↔ WebSocket` bridge with a single-use token, so the browser-based client
   can reach a raw RFB server.
 - 💾 **Saved connections** stored in settings, with passwords kept in VS Code's
-  encrypted **Secret Storage**.
+  encrypted **Secret Storage**. The pencil on a connection row opens a menu of
+  every property — address, auto-reconnect, raw encoding, cursor parking,
+  visible area — and each change is saved as you make it.
 - 🎚️ **Tunable** quality / compression, view-only mode, viewport scaling and
   optional server-side resize.
 - 🧩 **Multiple sessions** — open several remote screens side by side.

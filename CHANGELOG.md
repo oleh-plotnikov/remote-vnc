@@ -25,6 +25,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and render the padding as a dead black band beside the picture; the crop
   windows it away without touching noVNC's pointer math. Combined with
   cursor parking, the parked arrow lands inside the hidden band.
+- **Connection property menu.** Editing a saved connection now lists every
+  property with its current value instead of walking a fixed chain of
+  dialogs, so a single field can be changed on its own. Adding a connection
+  asks for `parkServerCursor` and `visibleArea` too — both previously had to
+  be written into `settings.json` by hand.
+
+### Fixed
+
+- **Editing a connection no longer deletes fields the dialogs never asked
+  about.** Both wizards rebuilt the saved entry from the answers they
+  collected, so one pass through **Edit Connection…** discarded a
+  hand-written `visibleArea` or `parkServerCursor`.
 
 ### Changed
 
