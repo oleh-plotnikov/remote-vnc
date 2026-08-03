@@ -216,8 +216,16 @@ async function connectEntry(context: vscode.ExtensionContext, entry: ConnectionE
 }
 
 async function addConnection(): Promise<void> {
+  // The scope question only appears when a folder is open, so the step count
+  // is derived rather than written down — a fixed denominator would be a lie
+  // in a window with no folder.
+  const hasFolder = Boolean(vscode.workspace.workspaceFolders);
+  const total = hasFolder ? 7 : 6;
+  let step = 0;
+  const title = () => `Add Saved Connection (${++step}/${total})`;
+
   const name = await vscode.window.showInputBox({
-    title: 'Add Saved Connection (1/2)',
+    title: title(),
     prompt: 'Display name for this connection',
     ignoreFocusOut: true,
     validateInput: (v) => (v.trim() ? undefined : 'A name is required.'),
@@ -227,7 +235,7 @@ async function addConnection(): Promise<void> {
   }
 
   const address = await vscode.window.showInputBox({
-    title: 'Add Saved Connection (2/2)',
+    title: title(),
     prompt: 'Server address: host, host:port, or host:display',
     placeHolder: 'hostname[:port]',
     ignoreFocusOut: true,
@@ -244,7 +252,7 @@ async function addConnection(): Promise<void> {
   // Default to global; only offer workspace scope when a folder is open, and
   // make the "may be committed" implication explicit.
   let target = vscode.ConfigurationTarget.Global;
-  if (vscode.workspace.workspaceFolders) {
+  if (hasFolder) {
     const scope = await vscode.window.showQuickPick(
       [
         {
@@ -258,7 +266,7 @@ async function addConnection(): Promise<void> {
           target: vscode.ConfigurationTarget.Workspace,
         },
       ],
-      { title: 'Where should this connection be saved?', placeHolder: 'Select a scope' }
+      { title: title(), placeHolder: 'Where should this connection be saved?' }
     );
     if (!scope) {
       return;
@@ -274,6 +282,15 @@ async function addConnection(): Promise<void> {
   if (forceRawEncoding === undefined) {
     return;
   }
+  const parkServerCursor = await promptParkServerCursor(getParkServerCursorDefault());
+  if (parkServerCursor === undefined) {
+    return;
+  }
+  const area = await promptVisibleArea(undefined);
+  if (!area) {
+    return;
+  }
+
   await saveConnection(
     target,
     applyConnectionEdit(undefined, {
@@ -282,6 +299,8 @@ async function addConnection(): Promise<void> {
       port: parsed.port,
       autoReconnect,
       forceRawEncoding,
+      parkServerCursor,
+      visibleArea: area.visibleArea,
     })
   );
 
