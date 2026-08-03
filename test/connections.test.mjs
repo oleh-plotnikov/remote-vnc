@@ -1,7 +1,14 @@
 import { load } from './bundle.mjs';
 
 export default async function ({ ok, eq }) {
-  const { collectConnections, isValidPort, secretKeyFor, effectiveAutoReconnect, applyConnectionEdit } = await load('connections.ts');
+  const {
+    collectConnections,
+    isValidPort,
+    secretKeyFor,
+    effectiveAutoReconnect,
+    applyConnectionEdit,
+    toConnectionEntry,
+  } = await load('connections.ts');
   const G = 1, W = 2; // ConfigurationTarget.Global / Workspace (from the stub)
 
   // isValidPort
@@ -99,4 +106,25 @@ export default async function ({ ok, eq }) {
   // A base value that is already undefined does not appear as a key.
   const sparse = applyConnectionEdit({ name: 'n', host: 'h', port: undefined }, {});
   eq('port' in sparse, false, 'an undefined base field is not written');
+
+  // toConnectionEntry is the single producer of entries: the layered reader
+  // above and the edit menu's single-scope re-read both go through it, so the
+  // menu can never merge onto a record collectConnections would have rejected.
+  eq(toConnectionEntry(undefined, G), undefined, 'a missing record yields no entry');
+  eq(toConnectionEntry({ host: 'h' }, G), undefined, 'a nameless record yields no entry');
+  eq(toConnectionEntry({ name: 'n', host: 'h', port: 70000 }, G), undefined, 'a bad port yields no entry');
+  eq(toConnectionEntry({ name: 'n', host: 'h' }, W), { name: 'n', host: 'h', scope: W }, 'a valid record is scope-tagged');
+
+  // The entry is spread from the stored record, not rebuilt from a literal of
+  // known keys — so a field this version does not know about survives a round
+  // trip through the editor instead of being silently dropped on the next save.
+  const stored = { name: 'hmi', host: '10.0.0.5', visibleArea: '480x272', futureField: 'keep me' };
+  const entry = toConnectionEntry(stored, G);
+  eq(entry.futureField, 'keep me', 'an unknown field survives the read');
+  const roundTripped = applyConnectionEdit(entry, { host: '10.0.0.6' });
+  eq(
+    roundTripped,
+    { name: 'hmi', host: '10.0.0.6', visibleArea: '480x272', futureField: 'keep me' },
+    'an unknown field survives read → edit → write, and scope does not'
+  );
 }

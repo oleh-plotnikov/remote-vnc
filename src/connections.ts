@@ -31,11 +31,31 @@ export function isValidPort(port: number | undefined): boolean {
 }
 
 /**
+ * Tag a stored record with the scope it came from, or reject it as unusable
+ * (bad host/name type, out-of-range port).
+ *
+ * Every `ConnectionEntry` in the extension is built here — by the layered
+ * reader below and by the single-scope re-read the edit menu does after each
+ * write — so both producers agree on validity and on shape. The record is
+ * spread rather than rebuilt from a literal of known keys: rebuilding is
+ * exactly the defect `applyConnectionEdit` exists to fix, and it would reappear
+ * here the moment a field is added to the schema and forgotten in the literal.
+ */
+export function toConnectionEntry(
+  conn: SavedConnection | undefined,
+  scope: vscode.ConfigurationTarget
+): ConnectionEntry | undefined {
+  if (!conn || typeof conn.host !== 'string' || typeof conn.name !== 'string' || !isValidPort(conn.port)) {
+    return undefined;
+  }
+  return { ...conn, scope };
+}
+
+/**
  * Resolve saved connections from a config inspection, tagging each with its
  * scope. Workspace scopes are layered UNDER global so a repo cannot shadow a
  * same-named user connection. In an untrusted workspace, workspace/folder
- * entries are dropped. Invalid entries (bad host/name type or out-of-range
- * port) are skipped.
+ * entries are dropped. Invalid entries are skipped.
  */
 export function collectConnections(
   inspect: ConnectionsInspect | undefined,
@@ -51,17 +71,9 @@ export function collectConnections(
   const byName = new Map<string, ConnectionEntry>();
   for (const { list, scope } of layers) {
     for (const c of list ?? []) {
-      if (c && typeof c.host === 'string' && typeof c.name === 'string' && isValidPort(c.port)) {
-        byName.set(c.name, {
-          name: c.name,
-          host: c.host,
-          port: c.port,
-          autoReconnect: c.autoReconnect,
-          forceRawEncoding: c.forceRawEncoding,
-          parkServerCursor: c.parkServerCursor,
-          visibleArea: c.visibleArea,
-          scope,
-        });
+      const entry = toConnectionEntry(c, scope);
+      if (entry) {
+        byName.set(entry.name, entry);
       }
     }
   }

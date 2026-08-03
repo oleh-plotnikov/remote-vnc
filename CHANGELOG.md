@@ -29,7 +29,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   property with its current value instead of walking a fixed chain of
   dialogs, so a single field can be changed on its own. Adding a connection
   asks for `parkServerCursor` and `visibleArea` too — both previously had to
-  be written into `settings.json` by hand.
+  be written into `settings.json` by hand. The two flags that also exist as
+  global settings, `autoReconnect` and `parkServerCursor`, offer **Default**
+  alongside Yes and No: a connection can be handed back to the global value
+  rather than pinned to an explicit one, and a new connection follows the
+  global setting unless it is told otherwise.
 
 ### Fixed
 
