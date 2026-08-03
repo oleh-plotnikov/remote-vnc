@@ -1,5 +1,5 @@
 import RFB from '@novnc/novnc';
-import { cropLayout } from '../src/cropLayout';
+import { cropLayout, visibleSize } from '../src/cropLayout';
 
 interface RfbOptions {
   viewOnly: boolean;
@@ -412,13 +412,37 @@ window.addEventListener('message', (event: MessageEvent<ExtensionMessage>) => {
       post({ type: 'screenshot', error: 'No active connection to capture.' });
     } else {
       try {
-        post({ type: 'screenshot', dataUrl: canvas.toDataURL('image/png') });
+        post({ type: 'screenshot', dataUrl: capture(canvas) });
       } catch (err) {
         post({ type: 'screenshot', error: describe(err) });
       }
     }
   }
 });
+
+/**
+ * PNG data URL of what the viewer is showing. With a `visibleArea` crop the
+ * canvas still holds the padded framebuffer — the dead band is hidden by a
+ * clip box, not removed — so capturing the canvas directly would save the
+ * band the user cannot see. Copy the visible rectangle out first; without a
+ * crop the canvas is already the answer and no copy happens.
+ */
+function capture(canvas: HTMLCanvasElement): string {
+  const size = visibleSize(canvas.width, canvas.height, crop);
+  if (size.width === canvas.width && size.height === canvas.height) {
+    return canvas.toDataURL('image/png');
+  }
+  const out = document.createElement('canvas');
+  out.width = size.width;
+  out.height = size.height;
+  const ctx = out.getContext('2d');
+  if (!ctx) {
+    // No 2D context means no copy is possible; the padded capture beats none.
+    return canvas.toDataURL('image/png');
+  }
+  ctx.drawImage(canvas, 0, 0, size.width, size.height, 0, 0, size.width, size.height);
+  return out.toDataURL('image/png');
+}
 
 function describe(err: unknown): string {
   return err instanceof Error ? err.message : String(err);

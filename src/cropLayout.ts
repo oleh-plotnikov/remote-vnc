@@ -57,6 +57,26 @@ export function cropLayout(
 }
 
 /**
+ * The pixel size that actually represents the device: the crop when one is
+ * set, clamped to the framebuffer, and the framebuffer itself otherwise.
+ *
+ * The viewer hides the dead band with a clip box drawn around a full-size
+ * canvas — the canvas keeps every advertised pixel. Anything that reads the
+ * canvas rather than looking at it (a screenshot) therefore has to crop
+ * explicitly, or it captures the band the viewer is hiding.
+ */
+export function visibleSize(
+  fbWidth: number,
+  fbHeight: number,
+  crop: { width: number; height: number } | undefined
+): { width: number; height: number } {
+  return {
+    width: crop ? Math.min(crop.width, fbWidth) : fbWidth,
+    height: crop ? Math.min(crop.height, fbHeight) : fbHeight,
+  };
+}
+
+/**
  * Parse a `visibleArea` setting ("480x272", `x` or `×`) into dimensions.
  * Bounds are generous — panels smaller than 16px or larger than 16384px are
  * not real devices, they are typos.

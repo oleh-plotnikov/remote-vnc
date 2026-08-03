@@ -1,7 +1,7 @@
 import { load } from './bundle.mjs';
 
 export default async function ({ ok, eq }) {
-  const { cropLayout, parseVisibleArea } = await load('cropLayout.ts');
+  const { cropLayout, parseVisibleArea, visibleSize } = await load('cropLayout.ts');
 
   // The motivating case: a 480x272 panel advertised as 512x272, shown in a
   // 960x544 tab. The crop fills the box exactly; the inner container carries
@@ -38,4 +38,20 @@ export default async function ({ ok, eq }) {
   eq(parseVisibleArea('99999x272'), undefined, 'out-of-range width rejected');
   eq(parseVisibleArea(undefined), undefined, 'absent setting rejected');
   eq(parseVisibleArea('4 8 0x272'), undefined, 'garbage rejected');
+
+  // visibleSize: what a screenshot should keep. The viewer hides the dead band
+  // with a clip box around a full-size canvas, so a capture of that canvas
+  // carries the band unless it is cropped explicitly.
+  eq(visibleSize(512, 272, { width: 480, height: 272 }), { width: 480, height: 272 }, 'crop wins');
+  eq(visibleSize(512, 272, undefined), { width: 512, height: 272 }, 'no crop keeps the framebuffer');
+  eq(
+    visibleSize(512, 272, { width: 9999, height: 9999 }),
+    { width: 512, height: 272 },
+    'a stale crop clamps to the framebuffer'
+  );
+  eq(
+    visibleSize(512, 272, { width: 512, height: 272 }),
+    { width: 512, height: 272 },
+    'a crop equal to the framebuffer is a no-op'
+  );
 }

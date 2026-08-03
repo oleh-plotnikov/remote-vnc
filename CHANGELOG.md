@@ -41,6 +41,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   about.** Both wizards rebuilt the saved entry from the answers they
   collected, so one pass through **Edit Connection…** discarded a
   hand-written `visibleArea` or `parkServerCursor`.
+- **Screenshots honour `visibleArea`.** The crop hides the dead band with a
+  clip box around a full-size canvas, so a capture of that canvas still
+  carried the band: the viewer showed 480x272 while the saved PNG was
+  512x272 with a black stripe down the side.
 
 ### Changed
 
