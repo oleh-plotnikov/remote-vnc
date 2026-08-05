@@ -222,7 +222,7 @@ async function addConnection(): Promise<void> {
   // is derived rather than written down — a fixed denominator would be a lie
   // in a window with no folder.
   const hasFolder = Boolean(vscode.workspace.workspaceFolders);
-  const total = hasFolder ? 7 : 6;
+  const total = hasFolder ? 8 : 7;
   let step = 0;
   // The shared prompts name their field in their own title, so the counted
   // title carries the field name too — a step reading only "(4/7)" would leave
@@ -306,6 +306,14 @@ async function addConnection(): Promise<void> {
   if (!park) {
     return;
   }
+  const scale = await promptScaleViewport(
+    undefined,
+    getScaleViewportDefault(),
+    title('Display size')
+  );
+  if (!scale) {
+    return;
+  }
   const area = await promptVisibleArea(undefined, title('Visible area'));
   if (!area) {
     return;
@@ -323,6 +331,7 @@ async function addConnection(): Promise<void> {
       ...autoReconnect,
       forceRawEncoding,
       ...park,
+      ...scale,
       visibleArea: area.visibleArea,
     })
   );
@@ -342,6 +351,7 @@ type ConnectionField =
   | 'autoReconnect'
   | 'forceRawEncoding'
   | 'parkServerCursor'
+  | 'scaleViewport'
   | 'visibleArea'
   | 'done';
 
@@ -351,6 +361,12 @@ function describeFlag(value: boolean | undefined, fallback: boolean): string {
     return `Default (${fallback ? 'On' : 'Off'})`;
   }
   return value ? 'On' : 'Off';
+}
+
+/** Describe the display-size choice: explicit, or the global default it inherits. */
+function describeScale(value: boolean | undefined, fallback: boolean): string {
+  const name = (v: boolean) => (v ? 'Scale to fit' : 'Original size (1:1)');
+  return value === undefined ? `Default (${name(fallback)})` : name(value);
 }
 
 /**
@@ -393,6 +409,11 @@ async function editConnection(entry: ConnectionEntry): Promise<void> {
         id: 'parkServerCursor',
         label: '$(target) Park server cursor',
         description: describeFlag(current.parkServerCursor, getParkServerCursorDefault()),
+      },
+      {
+        id: 'scaleViewport',
+        label: '$(screen-normal) Display size',
+        description: describeScale(current.scaleViewport, getScaleViewportDefault()),
       },
       {
         id: 'visibleArea',
@@ -487,6 +508,8 @@ async function promptConnectionField(
     }
     case 'parkServerCursor':
       return promptParkServerCursor(current.parkServerCursor, getParkServerCursorDefault());
+    case 'scaleViewport':
+      return promptScaleViewport(current.scaleViewport, getScaleViewportDefault());
     case 'visibleArea':
       return promptVisibleArea(current.visibleArea);
   }
@@ -801,6 +824,11 @@ function getParkServerCursorDefault(): boolean {
   return vscode.workspace.getConfiguration('remoteVnc').get<boolean>('parkServerCursor', false);
 }
 
+/** The global `remoteVnc.scaleViewport` default for connections without their own value. */
+function getScaleViewportDefault(): boolean {
+  return vscode.workspace.getConfiguration('remoteVnc').get<boolean>('scaleViewport', true);
+}
+
 function promptPassword(prompt = 'VNC password (leave empty if the server has no authentication)'): Thenable<string | undefined> {
   return vscode.window.showInputBox({
     title: 'VNC Authentication',
@@ -899,6 +927,40 @@ async function promptParkServerCursor(
     { title, placeHolder: currentlyFlag(current, fallback), ignoreFocusOut: true }
   );
   return pick ? { parkServerCursor: pick.value } : undefined;
+}
+
+/**
+ * Ask how the framebuffer should be displayed. Returns the patch to apply —
+ * `{ scaleViewport: undefined }` means "follow the global setting" — or
+ * undefined when cancelled. See `promptAutoReconnect` for why the inherited
+ * state has to be reachable.
+ */
+async function promptScaleViewport(
+  current: boolean | undefined,
+  fallback: boolean,
+  title = 'Display size'
+): Promise<{ scaleViewport: boolean | undefined } | undefined> {
+  const pick = await vscode.window.showQuickPick(
+    [
+      {
+        label: 'Scale to fit',
+        description: 'Zoom the framebuffer to fill the panel',
+        value: true as boolean | undefined,
+      },
+      {
+        label: 'Original size (1:1)',
+        description: 'Native pixels; scrollbars when it does not fit',
+        value: false as boolean | undefined,
+      },
+      {
+        label: describeScale(undefined, fallback),
+        description: 'Follow the remoteVnc.scaleViewport setting',
+        value: undefined,
+      },
+    ],
+    { title, placeHolder: `Currently: ${describeScale(current, fallback)}`, ignoreFocusOut: true }
+  );
+  return pick ? { scaleViewport: pick.value } : undefined;
 }
 
 /**

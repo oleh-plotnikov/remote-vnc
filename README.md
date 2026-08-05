@@ -64,7 +64,7 @@ Open the Command Palette (`Ctrl/Cmd+Shift+P`) and run one of:
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `remoteVnc.connections` | `[]` | Saved connections (`name`, `host`, `port`, optional `autoReconnect`, `forceRawEncoding`, `parkServerCursor`, `visibleArea`). |
+| `remoteVnc.connections` | `[]` | Saved connections (`name`, `host`, `port`, optional `autoReconnect`, `forceRawEncoding`, `parkServerCursor`, `scaleViewport`, `visibleArea`). |
 | `remoteVnc.autoReconnect` | `true` | Reconnect every 10 s after an unexpected drop. A connection's own `autoReconnect` overrides this. Stops on auth failure or manual disconnect. |
 | `remoteVnc.viewOnly` | `false` | Ignore local input. |
 | `remoteVnc.scaleViewport` | `true` | Scale the framebuffer to fit the panel. |
