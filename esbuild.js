@@ -17,7 +17,9 @@ const watch = process.argv.includes('--watch');
 // preserves comments carrying @license/@preserve (or opening with `/*!`), and
 // neither dependency marks its headers that way — so minification strips every
 // copyright notice. Re-adding them as banners is the only thing that survives.
-// Versions are read at build time so the notices cannot drift from what ships.
+// Versions are read at build time so the banner versions cannot drift from
+// what ships; the notice TEXTS are hand-written and pinned to the installed
+// packages by test/thirdPartyNotices.test.mjs instead.
 const novncBanner = `/*! Bundles noVNC ${depVersion('@novnc/novnc')} (core library)
  * Copyright (C) The noVNC authors — Mozilla Public License 2.0
  * Source: https://github.com/novnc/noVNC — license: https://mozilla.org/MPL/2.0/
@@ -25,7 +27,8 @@ const novncBanner = `/*! Bundles noVNC ${depVersion('@novnc/novnc')} (core libra
  * noVNC carries two components that are not MPL 2.0 and travel with it here:
  *   pako — Copyright (C) 2014-2016 by Vitaly Puzrin — MIT
  *   DES cipher — Copyright (c) 1996 Widget Workshop, Inc.;
- *                Copyright (C) 1999 AT&T Laboratories Cambridge
+ *                Copyright (C) 1999 AT&T Laboratories Cambridge;
+ *                Copyright (C) 1996 Jef Poskanzer (BSD terms)
  *
  * Also bundles gifenc ${depVersion('gifenc')} — (c) 2017 Matt DesLauriers — MIT
  * Source: https://github.com/mattdesl/gifenc

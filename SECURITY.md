@@ -45,7 +45,8 @@ plaintext" will be closed with a pointer here.
 
 ## Third-party code
 
-The bundles contain [noVNC](https://github.com/novnc/noVNC) and
+The bundles contain [noVNC](https://github.com/novnc/noVNC),
+[gifenc](https://github.com/mattdesl/gifenc) and
 [ws](https://github.com/websockets/ws); see
 [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md). Vulnerabilities in those
 projects are best reported to them directly — please also open an advisory here

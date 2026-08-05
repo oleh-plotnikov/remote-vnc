@@ -17,8 +17,8 @@ Compiled into `media/webview.js`.
 - Copyright (C) The noVNC authors — see <https://github.com/novnc/noVNC/blob/master/AUTHORS>
 - License: **Mozilla Public License 2.0**
 
-The full license text is at <https://mozilla.org/MPL/2.0/> and in the project's
-`LICENSE.txt`.
+The full license text is at <https://mozilla.org/MPL/2.0/> and in the npm
+package's `docs/LICENSE.MPL-2.0`.
 
 **Source code availability.** The bundled form is minified. The corresponding
 Source Code Form, as required by MPL 2.0 § 3.2, is the published `@novnc/novnc`
@@ -68,8 +68,10 @@ THE SOFTWARE.
 
 Provides the DES implementation used by classic VNC password authentication.
 Ported from the Flashlight VNC ActionScript implementation, itself extracted
-from package Acme.Crypto. Its terms require that the copyright notice be kept
-intact.
+from package Acme.Crypto. Three copyright holders' terms travel with it: the
+AT&T and Widget Workshop notices must be kept intact, and Jef Poskanzer's
+BSD-style terms require his notice, conditions and disclaimer to accompany
+binary redistribution — all three are reproduced below.
 
 ```
 This DES class has been extracted from package Acme.Crypto for use in VNC.
@@ -109,6 +111,34 @@ SOFTWARE COULD LEAD DIRECTLY TO DEATH, PERSONAL INJURY, OR SEVERE
 PHYSICAL OR ENVIRONMENTAL DAMAGE ("HIGH RISK ACTIVITIES").  WIDGET WORKSHOP
 SPECIFICALLY DISCLAIMS ANY EXPRESS OR IMPLIED WARRANTY OF FITNESS FOR
 HIGH RISK ACTIVITIES.
+
+The rest is:
+
+Copyright (C) 1996 by Jef Poskanzer <jef@acme.com>.  All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGE.
+
+Visit the ACME Labs Java page for up-to-date versions of this and other
+fine Java utilities: http://www.acme.com/java/
 ```
 
 ---

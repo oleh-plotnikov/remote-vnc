@@ -158,7 +158,10 @@ npx @vscode/vsce package --no-dependencies
 
 [MIT](./LICENSE).
 
-The bundles also contain [noVNC](https://github.com/novnc/noVNC) (MPL-2.0) and
+The bundles also contain [noVNC](https://github.com/novnc/noVNC) (MPL-2.0,
+carrying pako and a DES cipher under their own notices),
+[gifenc](https://github.com/mattdesl/gifenc) (MIT) and
 [ws](https://github.com/websockets/ws) (MIT), which stay under their own terms.
 Attribution and source-availability details are in
-[THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md).
+[THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md), which also ships inside
+the installed extension.

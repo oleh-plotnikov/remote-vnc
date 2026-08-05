@@ -4,6 +4,21 @@ All notable changes to **Remote VNC** are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-08-05
+
+### Fixed
+
+- **Third-party notices.** The DES cipher inside noVNC carries a third
+  license block — Jef Poskanzer's 1996 BSD-style terms, which require the
+  notice, conditions and disclaimer to accompany binary redistribution —
+  and it was missing from `THIRD-PARTY-NOTICES.md` and the bundle banner.
+  Both now reproduce it. A new test pins every notice text and banner
+  copyright line to the installed packages, so a dependency upgrade can no
+  longer ship stale attribution unnoticed, and the noVNC section now
+  points at the file that actually holds the MPL 2.0 text
+  (`docs/LICENSE.MPL-2.0`). README and SECURITY.md third-party summaries
+  now include gifenc.
+
 ## [1.2.0] - 2026-08-05
 
 ### Added
