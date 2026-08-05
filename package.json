@@ -100,6 +100,24 @@
         "icon": "$(stop-circle)"
       },
       {
+        "command": "remoteVnc.recordSession",
+        "title": "Start Recording",
+        "category": "Remote VNC",
+        "icon": "$(record)"
+      },
+      {
+        "command": "remoteVnc.stopRecordSession",
+        "title": "Stop Recording",
+        "category": "Remote VNC",
+        "icon": "$(stop-circle)"
+      },
+      {
+        "command": "remoteVnc.recordConnection",
+        "title": "Record / Stop Recording",
+        "category": "Remote VNC",
+        "icon": "$(record)"
+      },
+      {
         "command": "remoteVnc.connectConnection",
         "title": "Connect",
         "category": "Remote VNC",
@@ -406,6 +424,18 @@
           "when": "false"
         },
         {
+          "command": "remoteVnc.recordSession",
+          "when": "false"
+        },
+        {
+          "command": "remoteVnc.stopRecordSession",
+          "when": "false"
+        },
+        {
+          "command": "remoteVnc.recordConnection",
+          "when": "false"
+        },
+        {
           "command": "remoteVnc.openPageItem",
           "when": "false"
         },
@@ -459,34 +489,49 @@
           "group": "inline@2"
         },
         {
-          "command": "remoteVnc.editConnection",
+          "command": "remoteVnc.recordConnection",
           "when": "view == remoteVnc.connectionsView && viewItem == remoteVnc.connection",
           "group": "inline@3"
         },
         {
-          "command": "remoteVnc.forgetConnectionPassword",
+          "command": "remoteVnc.editConnection",
           "when": "view == remoteVnc.connectionsView && viewItem == remoteVnc.connection",
           "group": "inline@4"
         },
         {
-          "command": "remoteVnc.deleteConnection",
+          "command": "remoteVnc.forgetConnectionPassword",
           "when": "view == remoteVnc.connectionsView && viewItem == remoteVnc.connection",
           "group": "inline@5"
         },
         {
+          "command": "remoteVnc.deleteConnection",
+          "when": "view == remoteVnc.connectionsView && viewItem == remoteVnc.connection",
+          "group": "inline@6"
+        },
+        {
           "command": "remoteVnc.revealSession",
-          "when": "view == remoteVnc.sessionsView && viewItem == remoteVnc.session",
+          "when": "view == remoteVnc.sessionsView && viewItem =~ /^remoteVnc\\.session/",
           "group": "inline@1"
         },
         {
           "command": "remoteVnc.screenshotSession",
-          "when": "view == remoteVnc.sessionsView && viewItem == remoteVnc.session",
+          "when": "view == remoteVnc.sessionsView && viewItem =~ /^remoteVnc\\.session/",
           "group": "inline@2"
         },
         {
-          "command": "remoteVnc.disconnectSession",
+          "command": "remoteVnc.recordSession",
           "when": "view == remoteVnc.sessionsView && viewItem == remoteVnc.session",
           "group": "inline@3"
+        },
+        {
+          "command": "remoteVnc.stopRecordSession",
+          "when": "view == remoteVnc.sessionsView && viewItem == remoteVnc.session.recording",
+          "group": "inline@3"
+        },
+        {
+          "command": "remoteVnc.disconnectSession",
+          "when": "view == remoteVnc.sessionsView && viewItem =~ /^remoteVnc\\.session/",
+          "group": "inline@4"
         },
         {
           "command": "remoteVnc.openPageItem",

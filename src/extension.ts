@@ -103,6 +103,26 @@ export function activate(context: vscode.ExtensionContext): void {
         );
       }
     }),
+    vscode.commands.registerCommand('remoteVnc.recordSession', (item?: SessionTreeItem) => {
+      if (item) {
+        manager.recordSession(item.session.id);
+      }
+    }),
+    vscode.commands.registerCommand('remoteVnc.stopRecordSession', (item?: SessionTreeItem) => {
+      if (item) {
+        manager.stopRecordingSession(item.session.id);
+      }
+    }),
+    vscode.commands.registerCommand('remoteVnc.recordConnection', (item?: ConnectionTreeItem) => {
+      if (!item) {
+        return;
+      }
+      if (!manager.toggleRecordTarget(item.entry.host, item.entry.port ?? DEFAULT_PORT)) {
+        void vscode.window.showInformationMessage(
+          `Remote VNC: "${item.entry.name}" is not connected — connect first, then record.`
+        );
+      }
+    }),
     // Web pages — saved URLs (design mockups, local dev servers) opened as
     // clean full-bleed editor tabs alongside the VNC sessions.
     vscode.commands.registerCommand('remoteVnc.openPage', () => openPage(context)),

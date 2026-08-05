@@ -147,7 +147,10 @@ export class VncSessionManager {
       options,
       context: this.context,
       onStatus: (status) => this.registry.setStatus(id, status),
-      onRecordingChange: () => this.updateRecordingContext(),
+      onRecordingChange: () => {
+        this.registry.setRecording(id, session.isRecording);
+        this.updateRecordingContext();
+      },
     });
     this.sessions.set(id, session);
     this.registry.add(id, request.label);
@@ -230,6 +233,33 @@ export class VncSessionManager {
     const session = this.findByTarget(host, port);
     session?.takeScreenshot();
     return session !== undefined;
+  }
+
+  /** Start recording a specific session (Active Sessions tree button). */
+  recordSession(id: string): void {
+    this.sessions.get(id)?.startRecording();
+  }
+
+  /** Stop a specific session's recording (Active Sessions tree button). */
+  stopRecordingSession(id: string): void {
+    this.sessions.get(id)?.stopRecording();
+  }
+
+  /**
+   * Toggle recording for the live session of a target, if one exists
+   * (connection-row button — one button, camera-style target semantics).
+   */
+  toggleRecordTarget(host: string, port: number): boolean {
+    const session = this.findByTarget(host, port);
+    if (!session) {
+      return false;
+    }
+    if (session.isRecording) {
+      session.stopRecording();
+    } else {
+      session.startRecording();
+    }
+    return true;
   }
 
   dispose(): void {

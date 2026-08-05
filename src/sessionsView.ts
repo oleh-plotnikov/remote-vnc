@@ -10,10 +10,13 @@ export class SessionTreeItem extends vscode.TreeItem {
       // `~spin` animates the codicon while the host retries the connection.
       this.iconPath = new vscode.ThemeIcon('sync~spin', new vscode.ThemeColor('charts.yellow'));
       this.tooltip = 'Reconnecting…';
+    } else if (session.recording) {
+      this.iconPath = new vscode.ThemeIcon('record', new vscode.ThemeColor('charts.red'));
+      this.tooltip = 'Recording';
     } else {
       this.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('charts.green'));
     }
-    this.contextValue = 'remoteVnc.session';
+    this.contextValue = session.recording ? 'remoteVnc.session.recording' : 'remoteVnc.session';
     this.command = {
       command: 'remoteVnc.revealSession',
       title: 'Reveal',
