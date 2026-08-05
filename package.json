@@ -88,6 +88,18 @@
         "icon": "$(device-camera)"
       },
       {
+        "command": "remoteVnc.recordStart",
+        "title": "Start Recording",
+        "category": "Remote VNC",
+        "icon": "$(record)"
+      },
+      {
+        "command": "remoteVnc.recordStop",
+        "title": "Stop Recording",
+        "category": "Remote VNC",
+        "icon": "$(stop-circle)"
+      },
+      {
         "command": "remoteVnc.connectConnection",
         "title": "Connect",
         "category": "Remote VNC",
@@ -221,6 +233,31 @@
           "type": "string",
           "default": "",
           "markdownDescription": "Folder where **Remote VNC: Take Screenshot** saves PNG files without asking (`~` is expanded; the folder is created if missing). In a remote window (WSL, SSH, containers) this path is on the remote machine. Leave empty to pick a location every time."
+        },
+        "remoteVnc.recordingFormat": {
+          "type": "string",
+          "enum": [
+            "webm",
+            "gif"
+          ],
+          "default": "webm",
+          "markdownDescription": "Format **Remote VNC: Start Recording** captures. `webm` — efficient video, fine for long recordings. `gif` — universally embeddable animation, 256 colours, large files; best for short clips."
+        },
+        "remoteVnc.recordingFrameRate": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "maximum": 30,
+          "description": "Frames per second for recordings (both formats). Embedded panels update slowly — 10 is usually plenty and keeps GIF files small."
+        },
+        "remoteVnc.recordingAction": {
+          "type": "string",
+          "enum": [
+            "save",
+            "open"
+          ],
+          "default": "save",
+          "markdownDescription": "What happens when a recording stops. `save` — write the file like screenshots: silently into `remoteVnc.screenshotDirectory` when set, otherwise via a save dialog. `open` — stage the file in extension storage and open it as an editor tab without saving; a toast offers **Save As…**."
         },
         "remoteVnc.viewOnly": {
           "type": "boolean",
@@ -397,6 +434,16 @@
         {
           "command": "remoteVnc.screenshot",
           "when": "activeWebviewPanelId == remoteVnc.screen",
+          "group": "navigation"
+        },
+        {
+          "command": "remoteVnc.recordStart",
+          "when": "activeWebviewPanelId == remoteVnc.screen && !remoteVnc.recordingActive",
+          "group": "navigation"
+        },
+        {
+          "command": "remoteVnc.recordStop",
+          "when": "activeWebviewPanelId == remoteVnc.screen && remoteVnc.recordingActive",
           "group": "navigation"
         }
       ],

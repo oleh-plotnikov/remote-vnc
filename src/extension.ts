@@ -30,6 +30,9 @@ export function activate(context: vscode.ExtensionContext): void {
   logger().info(`Remote VNC activated (remote=${vscode.env.remoteName ?? 'local'}, ui=${vscode.env.appHost}).`);
   manager = new VncSessionManager(context);
   context.subscriptions.push(manager);
+  // The when-clause key must exist before the first panel gains focus.
+  void vscode.commands.executeCommand('setContext', 'remoteVnc.recordingActive', false);
+  void sweepOldRecordings(context);
 
   const connectionsProvider = new ConnectionsTreeProvider();
   const sessionsProvider = new SessionsTreeProvider(manager);
@@ -50,6 +53,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('remoteVnc.forgetPassword', () => forgetPassword(context)),
     vscode.commands.registerCommand('remoteVnc.disconnect', () => manager.disconnectActive()),
     vscode.commands.registerCommand('remoteVnc.screenshot', () => manager.screenshotActive()),
+    vscode.commands.registerCommand('remoteVnc.recordStart', () => manager.recordActive()),
+    vscode.commands.registerCommand('remoteVnc.recordStop', () => manager.stopRecordingActive()),
     // Tree-only commands: hidden from the Command Palette via the
     // `commandPalette` menu gate, and guarded here in case they are invoked
     // without a tree item.
@@ -123,6 +128,36 @@ export function activate(context: vscode.ExtensionContext): void {
 export function deactivate(): void {
   manager?.dispose();
   disposeLogger();
+}
+
+/**
+ * Recordings "opened, not saved" are staged in global storage; anything the
+ * user wanted to keep has been Save-As'ed away, so week-old leftovers are
+ * deleted to keep the storage from growing unnoticed.
+ */
+async function sweepOldRecordings(context: vscode.ExtensionContext): Promise<void> {
+  const dir = vscode.Uri.joinPath(context.globalStorageUri, 'recordings');
+  let entries: Array<[string, vscode.FileType]>;
+  try {
+    entries = await vscode.workspace.fs.readDirectory(dir);
+  } catch {
+    return; // nothing staged yet
+  }
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  for (const [name, type] of entries) {
+    if (type !== vscode.FileType.File) {
+      continue;
+    }
+    const uri = vscode.Uri.joinPath(dir, name);
+    try {
+      const stat = await vscode.workspace.fs.stat(uri);
+      if (stat.mtime < cutoff) {
+        await vscode.workspace.fs.delete(uri);
+      }
+    } catch {
+      /* a file that cannot be statted or deleted is left alone */
+    }
+  }
 }
 
 async function connectAdHoc(context: vscode.ExtensionContext): Promise<void> {

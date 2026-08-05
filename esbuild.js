@@ -27,6 +27,9 @@ const novncBanner = `/*! Bundles noVNC ${depVersion('@novnc/novnc')} (core libra
  *   DES cipher — Copyright (c) 1996 Widget Workshop, Inc.;
  *                Copyright (C) 1999 AT&T Laboratories Cambridge
  *
+ * Also bundles gifenc ${depVersion('gifenc')} — (c) 2017 Matt DesLauriers — MIT
+ * Source: https://github.com/mattdesl/gifenc
+ *
  * Full notices: THIRD-PARTY-NOTICES.md, shipped with this extension.
  */`;
 const wsBanner = `/*! Bundles ws ${depVersion('ws')}

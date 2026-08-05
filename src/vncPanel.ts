@@ -2,13 +2,13 @@ import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import * as os from 'os';
 import { createBridge, VncBridge } from './vncBridge';
-import { screenshotFilename, pngBytesFromDataUrl, expandHome } from './screenshot';
+import { screenshotFilename, captureFilename, pngBytesFromDataUrl, expandHome } from './screenshot';
 import { SessionRegistry, SessionInfo, SessionStatus } from './sessionRegistry';
 import { ReconnectPolicy } from './reconnectPolicy';
 import { describeBridgeClose } from './closeDiagnostics';
 import { brandIconPath } from './brandIcon';
 import { logger } from './log';
-import { RecordingFormat, RecordingStopReason } from './recording';
+import { RecordingFormat, RecordingStopReason, recordingBytes, clampFps } from './recording';
 
 export interface RfbOptions {
   viewOnly: boolean;
@@ -60,6 +60,7 @@ interface VncSessionInit {
   options: RfbOptions;
   context: vscode.ExtensionContext;
   onStatus: (status: SessionStatus) => void;
+  onRecordingChange: () => void;
 }
 
 /** Owns the webview panels and their associated TCP↔WS bridges. */
@@ -146,15 +147,18 @@ export class VncSessionManager {
       options,
       context: this.context,
       onStatus: (status) => this.registry.setStatus(id, status),
+      onRecordingChange: () => this.updateRecordingContext(),
     });
     this.sessions.set(id, session);
     this.registry.add(id, request.label);
     this.active = session;
+    this.updateRecordingContext();
 
     panel.onDidChangeViewState((e) => {
       if (e.webviewPanel.active) {
         this.active = session;
       }
+      this.updateRecordingContext();
     });
     panel.onDidDispose(() => {
       this.sessions.delete(id);
@@ -162,6 +166,7 @@ export class VncSessionManager {
       if (this.active === session) {
         this.active = this.sessions.values().next().value;
       }
+      this.updateRecordingContext();
     });
   }
 
@@ -177,7 +182,7 @@ export class VncSessionManager {
 
   /** Tear down a specific session. */
   disconnect(id: string): void {
-    this.sessions.get(id)?.dispose();
+    void this.sessions.get(id)?.disposeGracefully();
   }
 
   disconnectActive(): void {
@@ -185,7 +190,7 @@ export class VncSessionManager {
       void vscode.window.showInformationMessage('Remote VNC: no active session.');
       return;
     }
-    this.active.dispose();
+    void this.active.disposeGracefully();
   }
 
   /** Screenshot the focused session (palette entry and the panel button). */
@@ -195,6 +200,24 @@ export class VncSessionManager {
       return;
     }
     this.active.takeScreenshot();
+  }
+
+  /** Start recording the focused session (palette and the panel button). */
+  recordActive(): void {
+    if (!this.active) {
+      void vscode.window.showInformationMessage('Remote VNC: no active session to record.');
+      return;
+    }
+    this.active.startRecording();
+  }
+
+  /** Stop the focused session's recording. */
+  stopRecordingActive(): void {
+    if (!this.active || !this.active.isRecording) {
+      void vscode.window.showInformationMessage('Remote VNC: no recording in progress.');
+      return;
+    }
+    this.active.stopRecording();
   }
 
   /** Screenshot a specific session (Active Sessions tree button). */
@@ -223,6 +246,15 @@ export class VncSessionManager {
       }
     }
     return undefined;
+  }
+
+  /** Mirror the focused session's recording state into the when-clause key. */
+  private updateRecordingContext(): void {
+    void vscode.commands.executeCommand(
+      'setContext',
+      'remoteVnc.recordingActive',
+      this.active?.isRecording ?? false
+    );
   }
 }
 
@@ -257,6 +289,11 @@ class VncSession {
   private connectedAt: number | undefined;
   /** The "force raw encoding" hint has been logged once for this session. */
   private rawHintShown = false;
+  private recording: 'idle' | 'starting' | 'recording' = 'idle';
+  /** Resolvers waiting for the in-flight recording to flush (graceful close). */
+  private recordingWaiters: Array<() => void> = [];
+  private readonly onRecordingChange: () => void;
+  private readonly globalStorageUri: vscode.Uri;
 
   constructor(init: VncSessionInit) {
     this.host = init.request.host;
@@ -272,6 +309,8 @@ class VncSession {
     this.panel = init.panel;
     this.connector = init.connector;
     this.onStatus = init.onStatus;
+    this.onRecordingChange = init.onRecordingChange;
+    this.globalStorageUri = init.context.globalStorageUri;
     this.bridge = init.bridge;
 
     this.panel.webview.html = renderHtml(this.panel.webview, this.extensionUri, init.clientUrl);
@@ -461,12 +500,77 @@ class VncSession {
           void this.saveScreenshot(msg.dataUrl);
         }
         break;
+      case 'record-status':
+        if (msg.error) {
+          logger().error(`recording (${this.label}): ${msg.error}`);
+          void vscode.window.showWarningMessage(
+            `Remote VNC (${this.label}): could not record — ${msg.error}.`
+          );
+        }
+        this.recording = msg.recording ? 'recording' : 'idle';
+        if (this.recording === 'idle') {
+          this.flushRecordingWaiters();
+        }
+        this.onRecordingChange();
+        break;
+      case 'recording':
+        this.recording = 'idle';
+        this.onRecordingChange();
+        this.flushRecordingWaiters();
+        void this.handleRecording(msg);
+        break;
     }
   }
 
   /** Ask the webview for the current framebuffer as a PNG. */
   takeScreenshot(): void {
     void this.post({ type: 'screenshot' });
+  }
+
+  get isRecording(): boolean {
+    return this.recording !== 'idle';
+  }
+
+  /** Ask the webview to start recording; settings pick format and rate. */
+  startRecording(): void {
+    if (this.recording !== 'idle') {
+      void vscode.window.showInformationMessage(`Remote VNC (${this.label}): already recording.`);
+      return;
+    }
+    const config = vscode.workspace.getConfiguration('remoteVnc');
+    const format: RecordingFormat =
+      config.get<string>('recordingFormat', 'webm') === 'gif' ? 'gif' : 'webm';
+    const fps = clampFps(config.get<number>('recordingFrameRate', 10));
+    this.recording = 'starting';
+    this.onRecordingChange();
+    void this.post({ type: 'record-start', format, fps });
+  }
+
+  stopRecording(): void {
+    if (this.recording === 'idle') {
+      void vscode.window.showInformationMessage(`Remote VNC (${this.label}): no recording in progress.`);
+      return;
+    }
+    void this.post({ type: 'record-stop' });
+  }
+
+  /**
+   * Disconnect on the user's behalf: an in-flight recording is stopped and
+   * given a moment to deliver its bytes before the webview is destroyed.
+   * (Closing the tab skips this — the webview dies instantly; documented.)
+   */
+  async disposeGracefully(): Promise<void> {
+    if (this.disposed) {
+      return;
+    }
+    if (this.recording !== 'idle') {
+      void this.post({ type: 'record-stop' });
+      await Promise.race([
+        new Promise<void>((resolve) => this.recordingWaiters.push(resolve)),
+        new Promise<void>((resolve) => setTimeout(resolve, 3000)),
+      ]);
+    }
+    this.dispose();
   }
 
   /**
@@ -531,6 +635,132 @@ class VncSession {
     }
   }
 
+  private flushRecordingWaiters(): void {
+    for (const resolve of this.recordingWaiters.splice(0)) {
+      resolve();
+    }
+  }
+
+  /** Validate, then save or open a finished recording, per settings. */
+  private async handleRecording(msg: Extract<WebviewMessage, { type: 'recording' }>): Promise<void> {
+    const bytes = recordingBytes(msg.format, msg.data);
+    if (!bytes) {
+      void vscode.window.showWarningMessage(
+        `Remote VNC (${this.label}): the webview returned no usable ${msg.format} data.`
+      );
+      return;
+    }
+    const note =
+      msg.reason === 'maxDuration'
+        ? ' (stopped at the 10-minute limit)'
+        : msg.reason === 'disconnected'
+          ? ' (session dropped)'
+          : '';
+    logger().info(
+      `recording finished (${this.label}) — ${msg.format}, ${Math.round(msg.durationMs / 1000)}s, reason ${msg.reason}`
+    );
+    const name = captureFilename(this.label, new Date(), msg.format);
+    const action = vscode.workspace
+      .getConfiguration('remoteVnc')
+      .get<string>('recordingAction', 'save');
+    if (action === 'open') {
+      await this.openRecording(bytes, name, msg.format, note);
+    } else {
+      await this.saveRecording(bytes, name, msg.format, note);
+    }
+  }
+
+  /** The screenshot save path, for a recording (directory → silent; else ask). */
+  private async saveRecording(
+    bytes: Uint8Array,
+    name: string,
+    format: RecordingFormat,
+    note: string
+  ): Promise<void> {
+    const configured = vscode.workspace
+      .getConfiguration('remoteVnc')
+      .get<string>('screenshotDirectory', '')
+      .trim();
+    let uri: vscode.Uri | undefined;
+    if (configured) {
+      const dir = vscode.Uri.file(expandHome(configured, os.homedir()));
+      try {
+        await vscode.workspace.fs.createDirectory(dir);
+        uri = vscode.Uri.joinPath(dir, name);
+      } catch (err) {
+        logger().warn(
+          `recording: cannot use remoteVnc.screenshotDirectory "${configured}" — ${describeError(err)}; asking instead`
+        );
+      }
+    }
+    if (!uri) {
+      uri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(`${os.homedir()}/${name}`),
+        filters: recordingFilters(format),
+      });
+      if (!uri) {
+        return; // cancelled
+      }
+    }
+    try {
+      await vscode.workspace.fs.writeFile(uri, bytes);
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `Remote VNC (${this.label}): could not save the recording — ${describeError(err)}.`
+      );
+      return;
+    }
+    logger().info(`recording saved (${this.label}) -> ${uri.fsPath}`);
+    const choice = await vscode.window.showInformationMessage(
+      `Remote VNC: recording saved${note} — ${name}`,
+      'Open'
+    );
+    if (choice === 'Open') {
+      void vscode.commands.executeCommand('vscode.open', uri);
+    }
+  }
+
+  /** Stage in extension storage (no user folder touched) and open as a tab. */
+  private async openRecording(
+    bytes: Uint8Array,
+    name: string,
+    format: RecordingFormat,
+    note: string
+  ): Promise<void> {
+    const dir = vscode.Uri.joinPath(this.globalStorageUri, 'recordings');
+    let uri: vscode.Uri;
+    try {
+      await vscode.workspace.fs.createDirectory(dir);
+      uri = vscode.Uri.joinPath(dir, name);
+      await vscode.workspace.fs.writeFile(uri, bytes);
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `Remote VNC (${this.label}): could not stage the recording — ${describeError(err)}.`
+      );
+      return;
+    }
+    await vscode.commands.executeCommand('vscode.open', uri);
+    const choice = await vscode.window.showInformationMessage(
+      `Remote VNC: recording opened, not saved${note}.`,
+      'Save As…'
+    );
+    if (choice === 'Save As…') {
+      const target = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(`${os.homedir()}/${name}`),
+        filters: recordingFilters(format),
+      });
+      if (target) {
+        try {
+          await vscode.workspace.fs.copy(uri, target, { overwrite: true });
+        } catch (err) {
+          void vscode.window.showErrorMessage(
+            `Remote VNC (${this.label}): could not save the recording — ${describeError(err)}.`
+          );
+        }
+      }
+    }
+  }
+
   private post(message: ExtensionMessage): Thenable<boolean> {
     return this.panel.webview.postMessage(message);
   }
@@ -550,6 +780,7 @@ class VncSession {
     }
     this.disposed = true;
     this.clearReconnectTimer();
+    this.flushRecordingWaiters();
     this.bridge.dispose();
     for (const d of this.disposables.splice(0)) {
       d.dispose();
@@ -630,6 +861,11 @@ function renderHtml(webview: vscode.Webview, extensionUri: vscode.Uri, bridgeUrl
 
 function describeError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** Save-dialog filter for a recording format. */
+function recordingFilters(format: RecordingFormat): Record<string, string[]> {
+  return format === 'gif' ? { 'GIF image': ['gif'] } : { 'WebM video': ['webm'] };
 }
 
 function isAddrInUse(err: unknown): boolean {
