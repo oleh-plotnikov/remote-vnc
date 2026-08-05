@@ -474,6 +474,7 @@
     "@types/vscode": "^1.84.0",
     "@types/ws": "^8.5.10",
     "esbuild": "^0.25.0",
+    "gifenc": "^1.0.3",
     "typescript": "^5.4.5",
     "ws": "^8.17.1"
   }

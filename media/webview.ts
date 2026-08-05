@@ -1,5 +1,7 @@
 import RFB from '@novnc/novnc';
 import { cropLayout, visibleSize } from '../src/cropLayout';
+import { RecordingFormat, RecordingStopReason } from '../src/recording';
+import { startRecording, Recorder } from './recorder';
 
 interface RfbOptions {
   viewOnly: boolean;
@@ -22,7 +24,9 @@ type ExtensionMessage =
     }
   | { type: 'disconnect' }
   | { type: 'reconnecting' }
-  | { type: 'screenshot' };
+  | { type: 'screenshot' }
+  | { type: 'record-start'; format: RecordingFormat; fps: number }
+  | { type: 'record-stop' };
 
 interface VsCodeApi {
   postMessage(message: unknown): void;
@@ -33,8 +37,11 @@ declare function acquireVsCodeApi(): VsCodeApi;
 const vscode = acquireVsCodeApi();
 const screen = document.getElementById('screen') as HTMLDivElement;
 const statusBar = document.getElementById('status') as HTMLDivElement;
+const recBadge = document.getElementById('rec') as HTMLDivElement;
 
 let rfb: RFB | undefined;
+
+let recorder: Recorder | undefined;
 
 // Set on an auth/security failure; cleared by the next connect. The failure
 // status is terminal and actionable, so a racing host-side 'reconnecting'
@@ -234,7 +241,56 @@ function post(message: unknown): void {
   vscode.postMessage(message);
 }
 
+function stopRecorder(reason: RecordingStopReason): void {
+  // onStop/onError clear `recorder` and the badge; stop() is idempotent, so
+  // every teardown path may call this unconditionally.
+  recorder?.stop(reason);
+}
+
+function startSessionRecording(format: RecordingFormat, fps: number): void {
+  if (recorder) {
+    return; // already recording — the button pair cannot normally reach this
+  }
+  const canvas = screen.querySelector('canvas');
+  if (!rfb || !canvas) {
+    post({ type: 'record-status', recording: false, error: 'No active connection to record.' });
+    return;
+  }
+  const size = visibleSize(canvas.width, canvas.height, crop);
+  const started = startRecording({
+    canvas,
+    width: size.width,
+    height: size.height,
+    format,
+    fps,
+    onStop: (result) => {
+      recorder = undefined;
+      recBadge.hidden = true;
+      post({
+        type: 'recording',
+        format,
+        data: result.data,
+        durationMs: result.durationMs,
+        reason: result.reason,
+      });
+    },
+    onError: (message) => {
+      recorder = undefined;
+      recBadge.hidden = true;
+      post({ type: 'record-status', recording: false, error: message });
+    },
+  });
+  if (started) {
+    recorder = started;
+    recBadge.hidden = false;
+    post({ type: 'record-status', recording: true });
+  }
+}
+
 function disconnect(): void {
+  // A dropping/reconnecting session must not lose the recording: flush it to
+  // the host while the webview is still alive (re-render is ~10 s away).
+  stopRecorder('disconnected');
   stopCompatRefresh();
   stopCursorPark();
   teardownCrop();
@@ -419,6 +475,16 @@ window.addEventListener('message', (event: MessageEvent<ExtensionMessage>) => {
       } catch (err) {
         post({ type: 'screenshot', error: describe(err) });
       }
+    }
+  } else if (msg.type === 'record-start') {
+    startSessionRecording(msg.format, msg.fps);
+  } else if (msg.type === 'record-stop') {
+    if (recorder) {
+      stopRecorder('stopped');
+    } else {
+      // A fresh webview after a reconnect knows nothing of an old recording;
+      // answering "not recording" heals the host's stale context key.
+      post({ type: 'record-status', recording: false });
     }
   }
 });

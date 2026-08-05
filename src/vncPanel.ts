@@ -8,6 +8,7 @@ import { ReconnectPolicy } from './reconnectPolicy';
 import { describeBridgeClose } from './closeDiagnostics';
 import { brandIconPath } from './brandIcon';
 import { logger } from './log';
+import { RecordingFormat, RecordingStopReason } from './recording';
 
 export interface RfbOptions {
   viewOnly: boolean;
@@ -569,7 +570,9 @@ type ExtensionMessage =
     }
   | { type: 'disconnect' }
   | { type: 'reconnecting' }
-  | { type: 'screenshot' };
+  | { type: 'screenshot' }
+  | { type: 'record-start'; format: RecordingFormat; fps: number }
+  | { type: 'record-stop' };
 
 type WebviewMessage =
   | { type: 'ready' }
@@ -577,7 +580,15 @@ type WebviewMessage =
   | { type: 'desktopname'; name: string }
   | { type: 'securityfailure'; reason?: string }
   | { type: 'log'; level: 'info' | 'error'; message: string }
-  | { type: 'screenshot'; dataUrl?: string; error?: string };
+  | { type: 'screenshot'; dataUrl?: string; error?: string }
+  | { type: 'record-status'; recording: boolean; error?: string }
+  | {
+      type: 'recording';
+      format: RecordingFormat;
+      data: Uint8Array | ArrayBuffer;
+      durationMs: number;
+      reason: RecordingStopReason;
+    };
 
 function renderHtml(webview: vscode.Webview, extensionUri: vscode.Uri, bridgeUrl: string): string {
   const nonce = crypto.randomBytes(16).toString('base64');
@@ -610,6 +621,7 @@ function renderHtml(webview: vscode.Webview, extensionUri: vscode.Uri, bridgeUrl
 </head>
 <body>
   <div id="status" class="status">Connecting…</div>
+  <div id="rec" class="rec" hidden>● REC</div>
   <div id="screen" class="screen"></div>
   <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
 </body>
