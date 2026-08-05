@@ -2,7 +2,7 @@
   "name": "remote-vnc",
   "displayName": "Remote VNC",
   "description": "View and control a remote screen over VNC directly inside VS Code.",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "publisher": "OlehPlotnikov",
   "license": "MIT",
   "engines": {
