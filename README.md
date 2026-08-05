@@ -1,8 +1,8 @@
 # Remote VNC
 
-[![Marketplace](https://img.shields.io/visual-studio-marketplace/v/OlehPlotnikov.remote-vnc?label=marketplace)](https://marketplace.visualstudio.com/items?itemName=OlehPlotnikov.remote-vnc)
+[![Marketplace](https://vsmarketplacebadges.dev/version/OlehPlotnikov.remote-vnc.svg?label=marketplace)](https://marketplace.visualstudio.com/items?itemName=OlehPlotnikov.remote-vnc)
 [![Open VSX](https://img.shields.io/open-vsx/v/OlehPlotnikov/remote-vnc?label=open%20vsx)](https://open-vsx.org/extension/OlehPlotnikov/remote-vnc)
-[![Installs](https://img.shields.io/visual-studio-marketplace/i/OlehPlotnikov.remote-vnc)](https://marketplace.visualstudio.com/items?itemName=OlehPlotnikov.remote-vnc)
+[![Installs](https://vsmarketplacebadges.dev/installs-short/OlehPlotnikov.remote-vnc.svg)](https://marketplace.visualstudio.com/items?itemName=OlehPlotnikov.remote-vnc)
 [![CI](https://github.com/oleh-plotnikov/remote-vnc/actions/workflows/ci.yml/badge.svg)](https://github.com/oleh-plotnikov/remote-vnc/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
