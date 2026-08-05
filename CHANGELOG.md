@@ -4,6 +4,24 @@ All notable changes to **Remote VNC** are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-08-05
+
+### Added
+
+- **Session recording.** A record/stop button on the viewer tab (plus
+  **Remote VNC: Start/Stop Recording** in the palette) captures the session
+  as WebM video or animated GIF — `remoteVnc.recordingFormat` picks the
+  format, `remoteVnc.recordingFrameRate` the capture rate. Recordings
+  save like screenshots (silently into `remoteVnc.screenshotDirectory`
+  when set), or with `remoteVnc.recordingAction: "open"` they open as an
+  editor tab without saving. A dropped connection or a Disconnect flushes
+  the partial recording instead of losing it; one recording is capped at
+  10 minutes.
+- **`scaleViewport`** (per connection): render the framebuffer at its
+  original 1:1 size with scrollbars instead of scaling it to fit the
+  panel. The connection editor gained a Display size step; when unset, the
+  global `remoteVnc.scaleViewport` default applies, as before.
+
 ## [1.1.0] - 2026-08-04
 
 ### Added
