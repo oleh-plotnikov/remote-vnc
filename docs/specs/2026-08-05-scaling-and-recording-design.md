@@ -207,3 +207,39 @@ node and is verified manually; the implementation plan carries the checklist
 - MP4 output — Chromium's MediaRecorder speaks WebM; converting is a job
   for external tools.
 - Audio. VNC has none.
+
+## Addendum (2026-08-05, after first hands-on testing)
+
+Two follow-ups from using the build, both approved before the 1.2.0
+release (so no compatibility burden):
+
+### Record buttons in the tree views
+
+The record control appears everywhere the camera does:
+
+- **Active Sessions rows** get an inline record button after the camera.
+  The row knows its own state: `SessionRegistry` gains a `recording`
+  flag (`setRecording(id, bool)`, change-fired like `setStatus`), the
+  tree item's `contextValue` becomes `remoteVnc.session.recording` while
+  recording, and the menu shows Start (`$(record)`) or Stop
+  (`$(stop-circle)`) accordingly. A recording row also swaps its icon to
+  a red `record` codicon (the reconnecting spinner still wins).
+  Existing session-row buttons switch their `when` to a
+  `viewItem =~ /^remoteVnc\.session/` prefix match so they stay visible
+  in both states.
+- **Saved Connections rows** get one `$(record)` toggle button beside
+  the camera, with the camera's target semantics: it finds the live
+  session for the row's host:port and starts or stops its recording;
+  with no live session it toasts "connect first", like the camera does.
+
+### `remoteVnc.screenshotAction`
+
+Screenshots gain the same post-capture choice recordings have, as a
+separate setting (`save` | `open`, default `save`) — the user explicitly
+preferred independent control over one shared setting. `save` is today's
+behaviour; `open` stages the PNG in the same extension-storage folder
+recordings use (the existing 7-day sweep covers it) and opens it as a
+tab with a "Save As…" toast. Internally the save/open delivery flows are
+unified into shared capture helpers parameterised by kind — this also
+resolves the `saveScreenshot`/`saveRecording` duplication the final
+review deferred.
