@@ -40,10 +40,10 @@ if you would rather install it by hand.
 - 🎚️ **Tunable** quality / compression, view-only mode, viewport scaling and
   optional server-side resize.
 - 🧩 **Multiple sessions** — open several remote screens side by side.
-- **Session recording** — a record/stop button on the viewer tab captures
-  the session as WebM video or animated GIF (`remoteVnc.recordingFormat`),
-  saved like screenshots or opened as a tab without saving
-  (`remoteVnc.recordingAction`).
+- **Session recording** — a record/stop button on the viewer tab, session
+  rows, and connection rows captures the session as WebM video or animated
+  GIF (`remoteVnc.recordingFormat`), saved like screenshots or opened as a
+  tab without saving (`remoteVnc.recordingAction`).
 - **Original-size display** — a connection can opt out of scale-to-fit and
   render 1:1 with scrollbars (`scaleViewport` per connection).
 
@@ -80,6 +80,7 @@ Open the Command Palette (`Ctrl/Cmd+Shift+P`) and run one of:
 | `remoteVnc.showDotCursor` | `false` | Always show a dot cursor. |
 | `remoteVnc.parkServerCursor` | `false` | Park the server-drawn pointer in the bottom-right corner when idle — for touch-screen devices that paint an arrow into the framebuffer. Per-connection `parkServerCursor` overrides this. |
 | `remoteVnc.screenshotDirectory` | `""` | Folder for one-click screenshot and recording saves (`~` allowed; on the remote under WSL/SSH/containers). Empty = ask every time. |
+| `remoteVnc.screenshotAction` | `"save"` | When a screenshot is taken: `save` to disk or `open` as an editor tab. |
 | `remoteVnc.recordingFormat` | `"webm"` | Recording format: `webm` (efficient video) or `gif` (256-color animation). |
 | `remoteVnc.recordingFrameRate` | `10` | Frames per second for recordings (1–30). |
 | `remoteVnc.recordingAction` | `"save"` | When a recording stops: `save` to disk or `open` as an editor tab. |

@@ -8,7 +8,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Session recording.** A record/stop button on the viewer tab (plus
+- **Session recording.** A record/stop button on the viewer tab, on
+  Active Sessions rows, and on Saved Connections rows (plus
   **Remote VNC: Start/Stop Recording** in the palette) captures the session
   as WebM video or animated GIF — `remoteVnc.recordingFormat` picks the
   format, `remoteVnc.recordingFrameRate` the capture rate. Recordings
@@ -17,6 +18,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   editor tab without saving. A dropped connection or a Disconnect flushes
   the partial recording instead of losing it; one recording is capped at
   10 minutes.
+- **`remoteVnc.screenshotAction`**: the same save-or-open choice as
+  recordings, but for screenshots — `save` (default) writes the PNG as
+  before, `open` stages it in extension storage and opens it as a tab
+  with a "Save As…" toast.
 - **`scaleViewport`** (per connection): render the framebuffer at its
   original 1:1 size with scrollbars instead of scaling it to fit the
   panel. The connection editor gained a Display size step; when unset, the

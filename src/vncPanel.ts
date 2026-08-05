@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import * as os from 'os';
 import { createBridge, VncBridge } from './vncBridge';
-import { screenshotFilename, captureFilename, pngBytesFromDataUrl, expandHome } from './screenshot';
+import { captureFilename, pngBytesFromDataUrl, expandHome } from './screenshot';
 import { SessionRegistry, SessionInfo, SessionStatus } from './sessionRegistry';
 import { ReconnectPolicy } from './reconnectPolicy';
 import { describeBridgeClose } from './closeDiagnostics';
@@ -604,10 +604,11 @@ class VncSession {
   }
 
   /**
-   * Save a captured PNG. With `remoteVnc.screenshotDirectory` set the file is
-   * written there silently (one click, no dialog); otherwise a save dialog
-   * asks. Either way the paths are on the machine the extension host runs on —
-   * under a remote (WSL, SSH, containers) that is the remote filesystem.
+   * Save a captured PNG, per `remoteVnc.screenshotAction`: silently into
+   * `remoteVnc.screenshotDirectory` (or a save dialog) by default, or opened
+   * as an unsaved tab. Either way `save` paths are on the machine the
+   * extension host runs on — under a remote (WSL, SSH, containers) that is
+   * the remote filesystem.
    */
   private async saveScreenshot(dataUrl: string): Promise<void> {
     const bytes = pngBytesFromDataUrl(dataUrl);
@@ -617,12 +618,32 @@ class VncSession {
       );
       return;
     }
-    const name = screenshotFilename(this.label, new Date());
+    const name = captureFilename(this.label, new Date(), 'png');
+    const action = vscode.workspace
+      .getConfiguration('remoteVnc')
+      .get<string>('screenshotAction', 'save');
+    const filters = { 'PNG image': ['png'] };
+    if (action === 'open') {
+      await this.openCapture(bytes, name, filters, 'screenshot');
+    } else {
+      await this.saveCapture(bytes, name, filters, 'screenshot');
+    }
+  }
+
+  /** Write a capture where the user keeps files: configured directory
+   *  silently, otherwise a save dialog. Shared by screenshots and
+   *  recordings — the flows differ only in wording and filters. */
+  private async saveCapture(
+    bytes: Uint8Array,
+    name: string,
+    filters: Record<string, string[]>,
+    kind: 'screenshot' | 'recording',
+    note = ''
+  ): Promise<void> {
     const configured = vscode.workspace
       .getConfiguration('remoteVnc')
       .get<string>('screenshotDirectory', '')
       .trim();
-
     let uri: vscode.Uri | undefined;
     if (configured) {
       const dir = vscode.Uri.file(expandHome(configured, os.homedir()));
@@ -630,38 +651,78 @@ class VncSession {
         await vscode.workspace.fs.createDirectory(dir);
         uri = vscode.Uri.joinPath(dir, name);
       } catch (err) {
-        // An unusable directory should not eat the screenshot — fall back to
-        // asking, with the reason on record.
         logger().warn(
-          `screenshot: cannot use remoteVnc.screenshotDirectory "${configured}" — ${describeError(err)}; asking instead`
+          `${kind}: cannot use remoteVnc.screenshotDirectory "${configured}" — ${describeError(err)}; asking instead`
         );
       }
     }
     if (!uri) {
       uri = await vscode.window.showSaveDialog({
         defaultUri: vscode.Uri.file(`${os.homedir()}/${name}`),
-        filters: { 'PNG image': ['png'] },
+        filters,
       });
       if (!uri) {
         return; // cancelled
       }
     }
-
     try {
       await vscode.workspace.fs.writeFile(uri, bytes);
     } catch (err) {
       void vscode.window.showErrorMessage(
-        `Remote VNC (${this.label}): could not save the screenshot — ${describeError(err)}.`
+        `Remote VNC (${this.label}): could not save the ${kind} — ${describeError(err)}.`
       );
       return;
     }
-    logger().info(`screenshot saved (${this.label}) -> ${uri.fsPath}`);
+    logger().info(`${kind} saved (${this.label}) -> ${uri.fsPath}`);
     const choice = await vscode.window.showInformationMessage(
-      `Remote VNC: screenshot saved — ${name}`,
+      `Remote VNC: ${kind} saved${note} — ${name}`,
       'Open'
     );
     if (choice === 'Open') {
       void vscode.commands.executeCommand('vscode.open', uri);
+    }
+  }
+
+  /** Stage a capture in extension storage (no user folder touched) and
+   *  open it as a tab; a toast offers copying it somewhere permanent. */
+  private async openCapture(
+    bytes: Uint8Array,
+    name: string,
+    filters: Record<string, string[]>,
+    kind: 'screenshot' | 'recording',
+    note = ''
+  ): Promise<void> {
+    const dir = vscode.Uri.joinPath(this.globalStorageUri, 'recordings');
+    let uri: vscode.Uri;
+    try {
+      await vscode.workspace.fs.createDirectory(dir);
+      uri = vscode.Uri.joinPath(dir, name);
+      await vscode.workspace.fs.writeFile(uri, bytes);
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `Remote VNC (${this.label}): could not stage the ${kind} — ${describeError(err)}.`
+      );
+      return;
+    }
+    await vscode.commands.executeCommand('vscode.open', uri);
+    const choice = await vscode.window.showInformationMessage(
+      `Remote VNC: ${kind} opened, not saved${note}.`,
+      'Save As…'
+    );
+    if (choice === 'Save As…') {
+      const target = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(`${os.homedir()}/${name}`),
+        filters,
+      });
+      if (target) {
+        try {
+          await vscode.workspace.fs.copy(uri, target, { overwrite: true });
+        } catch (err) {
+          void vscode.window.showErrorMessage(
+            `Remote VNC (${this.label}): could not save the ${kind} — ${describeError(err)}.`
+          );
+        }
+      }
     }
   }
 
@@ -699,100 +760,9 @@ class VncSession {
       .getConfiguration('remoteVnc')
       .get<string>('recordingAction', 'save');
     if (action === 'open') {
-      await this.openRecording(bytes, name, format, note);
+      await this.openCapture(bytes, name, recordingFilters(format), 'recording', note);
     } else {
-      await this.saveRecording(bytes, name, format, note);
-    }
-  }
-
-  /** The screenshot save path, for a recording (directory → silent; else ask). */
-  private async saveRecording(
-    bytes: Uint8Array,
-    name: string,
-    format: RecordingFormat,
-    note: string
-  ): Promise<void> {
-    const configured = vscode.workspace
-      .getConfiguration('remoteVnc')
-      .get<string>('screenshotDirectory', '')
-      .trim();
-    let uri: vscode.Uri | undefined;
-    if (configured) {
-      const dir = vscode.Uri.file(expandHome(configured, os.homedir()));
-      try {
-        await vscode.workspace.fs.createDirectory(dir);
-        uri = vscode.Uri.joinPath(dir, name);
-      } catch (err) {
-        logger().warn(
-          `recording: cannot use remoteVnc.screenshotDirectory "${configured}" — ${describeError(err)}; asking instead`
-        );
-      }
-    }
-    if (!uri) {
-      uri = await vscode.window.showSaveDialog({
-        defaultUri: vscode.Uri.file(`${os.homedir()}/${name}`),
-        filters: recordingFilters(format),
-      });
-      if (!uri) {
-        return; // cancelled
-      }
-    }
-    try {
-      await vscode.workspace.fs.writeFile(uri, bytes);
-    } catch (err) {
-      void vscode.window.showErrorMessage(
-        `Remote VNC (${this.label}): could not save the recording — ${describeError(err)}.`
-      );
-      return;
-    }
-    logger().info(`recording saved (${this.label}) -> ${uri.fsPath}`);
-    const choice = await vscode.window.showInformationMessage(
-      `Remote VNC: recording saved${note} — ${name}`,
-      'Open'
-    );
-    if (choice === 'Open') {
-      void vscode.commands.executeCommand('vscode.open', uri);
-    }
-  }
-
-  /** Stage in extension storage (no user folder touched) and open as a tab. */
-  private async openRecording(
-    bytes: Uint8Array,
-    name: string,
-    format: RecordingFormat,
-    note: string
-  ): Promise<void> {
-    const dir = vscode.Uri.joinPath(this.globalStorageUri, 'recordings');
-    let uri: vscode.Uri;
-    try {
-      await vscode.workspace.fs.createDirectory(dir);
-      uri = vscode.Uri.joinPath(dir, name);
-      await vscode.workspace.fs.writeFile(uri, bytes);
-    } catch (err) {
-      void vscode.window.showErrorMessage(
-        `Remote VNC (${this.label}): could not stage the recording — ${describeError(err)}.`
-      );
-      return;
-    }
-    await vscode.commands.executeCommand('vscode.open', uri);
-    const choice = await vscode.window.showInformationMessage(
-      `Remote VNC: recording opened, not saved${note}.`,
-      'Save As…'
-    );
-    if (choice === 'Save As…') {
-      const target = await vscode.window.showSaveDialog({
-        defaultUri: vscode.Uri.file(`${os.homedir()}/${name}`),
-        filters: recordingFilters(format),
-      });
-      if (target) {
-        try {
-          await vscode.workspace.fs.copy(uri, target, { overwrite: true });
-        } catch (err) {
-          void vscode.window.showErrorMessage(
-            `Remote VNC (${this.label}): could not save the recording — ${describeError(err)}.`
-          );
-        }
-      }
+      await this.saveCapture(bytes, name, recordingFilters(format), 'recording', note);
     }
   }
 

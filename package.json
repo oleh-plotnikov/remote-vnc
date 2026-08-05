@@ -252,6 +252,15 @@
           "default": "",
           "markdownDescription": "Folder where **Remote VNC: Take Screenshot** saves PNG files and where recordings are saved without asking (`~` is expanded; the folder is created if missing). In a remote window (WSL, SSH, containers) this path is on the remote machine. Leave empty to pick a location every time."
         },
+        "remoteVnc.screenshotAction": {
+          "type": "string",
+          "enum": [
+            "save",
+            "open"
+          ],
+          "default": "save",
+          "markdownDescription": "What happens when a screenshot is taken. `save` — write the file: silently into `remoteVnc.screenshotDirectory` when set, otherwise via a save dialog. `open` — stage the file in extension storage and open it as an editor tab without saving; a toast offers **Save As…**."
+        },
         "remoteVnc.recordingFormat": {
           "type": "string",
           "enum": [
