@@ -78,6 +78,13 @@ function startWebm(opts: RecorderOptions): Recorder | undefined {
   const startedAt = Date.now();
   let reason: RecordingStopReason = 'stopped';
   let done = false;
+  // A failing recorder fires 'error' and then a trailing 'stop' event (the
+  // spec's error -> dataavailable -> stop sequence), so onstop alone cannot
+  // assume it is the normal path. `done` cannot double as this guard either:
+  // the ordinary stop() path already sets it before calling recorder.stop(),
+  // before onstop fires. `delivered` tracks only whether onStop/onError has
+  // fired, so the pair stays mutually exclusive and exactly-once either way.
+  let delivered = false;
 
   const cleanup = () => {
     if (copyTimer !== undefined) {
@@ -91,15 +98,20 @@ function startWebm(opts: RecorderOptions): Recorder | undefined {
     }
   };
   recorder.onstop = () => {
+    if (delivered) {
+      return;
+    }
+    delivered = true;
     cleanup();
     void new Blob(chunks, { type: mime }).arrayBuffer().then((buf) => {
       opts.onStop({ data: new Uint8Array(buf), durationMs: Date.now() - startedAt, reason });
     });
   };
   recorder.onerror = () => {
-    if (done) {
+    if (delivered) {
       return;
     }
+    delivered = true;
     done = true;
     cleanup();
     opts.onError('MediaRecorder failed mid-recording');
