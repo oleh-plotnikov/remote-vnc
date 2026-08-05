@@ -27,6 +27,21 @@ body {
   display: block;
 }
 
+/* Original-size (1:1) mode: the panel scrolls instead of zooming. Centring
+   must come from `margin: auto` — with plain flex centring the top/left
+   overflow edges of an oversized framebuffer cannot be scrolled to.
+   `!important` because noVNC writes an inline overflow style on its
+   container (which is #screen itself when no crop is active). */
+.screen[data-mode='native'] {
+  overflow: auto !important;
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+
+.screen[data-mode='native'] > * {
+  margin: auto;
+}
+
 /* visibleArea crop: the clip box windows just the visible panel area; the
    inner container is sized by layoutCrop so noVNC's own scale-to-fit lands on
    the crop's scale. Position (not transform) does the clipping, so pointer

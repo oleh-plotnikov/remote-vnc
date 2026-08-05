@@ -261,6 +261,9 @@ function connect(msg: Extract<ExtensionMessage, { type: 'connect' }>): void {
   parkLogged = false;
   crop = msg.crop;
   cropLogged = false;
+  // 1:1 mode swaps the flex centring for a scrollable box (see style.css);
+  // the attribute is the webview's single switch for that styling.
+  screen.dataset.mode = msg.options.scaleViewport ? 'fit' : 'native';
   // A fresh connection starts idle, so the first park happens right away —
   // the arrow a touch-screen server paints at its resting position should be
   // gone before the operator ever sees it.
