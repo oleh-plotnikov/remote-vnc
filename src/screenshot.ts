@@ -6,14 +6,14 @@
  */
 
 /**
- * File name for a screenshot of the given connection, e.g.
+ * File name for a capture of the given connection, e.g.
  * `hmi-20260803-181530.png` — just the label and a timestamp, nothing else;
  * the label already says what was captured. It keeps unicode letters and
  * digits (labels are user-given and often non-ASCII) and collapses everything
  * else to a dash — path separators and other filesystem-hostile characters
  * must not survive into a file name.
  */
-export function screenshotFilename(label: string, now: Date): string {
+export function captureFilename(label: string, now: Date, ext: string): string {
   const safe = label
     .replace(/[^\p{L}\p{N}._-]+/gu, '-')
     .replace(/^[-.]+|[-.]+$/g, '')
@@ -22,7 +22,12 @@ export function screenshotFilename(label: string, now: Date): string {
   const stamp =
     `${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}` +
     `-${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`;
-  return `${safe || 'session'}-${stamp}.png`;
+  return `${safe || 'session'}-${stamp}.${ext}`;
+}
+
+/** The screenshot case of `captureFilename`. */
+export function screenshotFilename(label: string, now: Date): string {
+  return captureFilename(label, now, 'png');
 }
 
 /**

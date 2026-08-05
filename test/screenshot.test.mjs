@@ -1,7 +1,7 @@
 import { load } from './bundle.mjs';
 
 export default async function ({ ok, eq }) {
-  const { screenshotFilename, pngBytesFromDataUrl, expandHome } = await load('screenshot.ts');
+  const { captureFilename, screenshotFilename, pngBytesFromDataUrl, expandHome } = await load('screenshot.ts');
 
   // Filenames: label + timestamp only (no product prefix), filesystem-safe,
   // unicode labels kept.
@@ -21,6 +21,13 @@ export default async function ({ ok, eq }) {
   eq(pngBytesFromDataUrl('data:image/png;base64,'), undefined, 'empty payload rejected');
   eq(pngBytesFromDataUrl('data:image/png;base64,not*valid!'), undefined, 'invalid base64 rejected');
   eq(pngBytesFromDataUrl('AAAA'), undefined, 'bare base64 without prefix rejected');
+
+  // captureFilename generalises the screenshot name to any extension; the
+  // png case must keep producing exactly the names screenshots always had.
+  eq(captureFilename('hmi', at, 'webm'), 'hmi-20260803-181530.webm', 'webm extension');
+  eq(captureFilename('hmi', at, 'gif'), 'hmi-20260803-181530.gif', 'gif extension');
+  eq(captureFilename('hmi', at, 'png'), screenshotFilename('hmi', at), 'png case matches screenshots');
+  eq(captureFilename('a b/c:d', at, 'gif'), 'a-b-c-d-20260803-181530.gif', 'sanitising applies');
 
   // Home expansion: only a leading whole-segment tilde.
   eq(expandHome('~', '/home/u'), '/home/u', 'bare tilde');
