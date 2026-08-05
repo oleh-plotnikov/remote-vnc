@@ -79,7 +79,7 @@ Open the Command Palette (`Ctrl/Cmd+Shift+P`) and run one of:
 | `remoteVnc.compressionLevel` | `2` | Tight compression (0–9). |
 | `remoteVnc.showDotCursor` | `false` | Always show a dot cursor. |
 | `remoteVnc.parkServerCursor` | `false` | Park the server-drawn pointer in the bottom-right corner when idle — for touch-screen devices that paint an arrow into the framebuffer. Per-connection `parkServerCursor` overrides this. |
-| `remoteVnc.screenshotDirectory` | `""` | Folder for one-click screenshot saves (`~` allowed; on the remote under WSL/SSH/containers). Empty = ask every time. |
+| `remoteVnc.screenshotDirectory` | `""` | Folder for one-click screenshot and recording saves (`~` allowed; on the remote under WSL/SSH/containers). Empty = ask every time. |
 | `remoteVnc.recordingFormat` | `"webm"` | Recording format: `webm` (efficient video) or `gif` (256-color animation). |
 | `remoteVnc.recordingFrameRate` | `10` | Frames per second for recordings (1–30). |
 | `remoteVnc.recordingAction` | `"save"` | When a recording stops: `save` to disk or `open` as an editor tab. |

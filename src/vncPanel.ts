@@ -643,10 +643,15 @@ class VncSession {
 
   /** Validate, then save or open a finished recording, per settings. */
   private async handleRecording(msg: Extract<WebviewMessage, { type: 'recording' }>): Promise<void> {
-    const bytes = recordingBytes(msg.format, msg.data);
+    // msg.format crosses the webview boundary untrusted — the TS type is
+    // only a compile-time hint, not a runtime guarantee. Re-normalise it
+    // the same way startRecording does, so an untrusted message can never
+    // name the file we silently write to disk.
+    const format: RecordingFormat = msg.format === 'gif' ? 'gif' : 'webm';
+    const bytes = recordingBytes(format, msg.data);
     if (!bytes) {
       void vscode.window.showWarningMessage(
-        `Remote VNC (${this.label}): the webview returned no usable ${msg.format} data.`
+        `Remote VNC (${this.label}): the webview returned no usable ${format} data.`
       );
       return;
     }
@@ -657,16 +662,16 @@ class VncSession {
           ? ' (session dropped)'
           : '';
     logger().info(
-      `recording finished (${this.label}) — ${msg.format}, ${Math.round(msg.durationMs / 1000)}s, reason ${msg.reason}`
+      `recording finished (${this.label}) — ${format}, ${Math.round(msg.durationMs / 1000)}s, reason ${msg.reason}`
     );
-    const name = captureFilename(this.label, new Date(), msg.format);
+    const name = captureFilename(this.label, new Date(), format);
     const action = vscode.workspace
       .getConfiguration('remoteVnc')
       .get<string>('recordingAction', 'save');
     if (action === 'open') {
-      await this.openRecording(bytes, name, msg.format, note);
+      await this.openRecording(bytes, name, format, note);
     } else {
-      await this.saveRecording(bytes, name, msg.format, note);
+      await this.saveRecording(bytes, name, format, note);
     }
   }
 
