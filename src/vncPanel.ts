@@ -621,7 +621,7 @@ class VncSession {
     const name = captureFilename(this.label, new Date(), 'png');
     const action = vscode.workspace
       .getConfiguration('remoteVnc')
-      .get<string>('screenshotAction', 'save');
+      .get<string>('screenshotAction', 'open');
     const filters = { 'PNG image': ['png'] };
     if (action === 'open') {
       await this.openCapture(bytes, name, filters, 'screenshot');
@@ -758,7 +758,7 @@ class VncSession {
     const name = captureFilename(this.label, new Date(), format);
     const action = vscode.workspace
       .getConfiguration('remoteVnc')
-      .get<string>('recordingAction', 'save');
+      .get<string>('recordingAction', 'open');
     if (action === 'open') {
       await this.openCapture(bytes, name, recordingFilters(format), 'recording', note);
     } else {

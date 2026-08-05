@@ -86,7 +86,7 @@ shows a small "● REC" badge in a corner of the screen.
 - `remoteVnc.recordingFrameRate`: number, default `10`, range 1–30, used by
   both formats. Embedded panels update slowly; 10 fps keeps GIFs a sane
   size.
-- `remoteVnc.recordingAction`: `"save"` (default) | `"open"` — what happens
+- `remoteVnc.recordingAction`: `"open"` (default) | `"save"` — what happens
   on stop. `save` mirrors screenshots exactly: with
   `remoteVnc.screenshotDirectory` set the file is written there silently,
   otherwise a save dialog asks. `open` writes the file to the extension's
@@ -235,7 +235,7 @@ The record control appears everywhere the camera does:
 ### `remoteVnc.screenshotAction`
 
 Screenshots gain the same post-capture choice recordings have, as a
-separate setting (`save` | `open`, default `save`) — the user explicitly
+separate setting (`save` | `open`, default `open`) — the user explicitly
 preferred independent control over one shared setting. `save` is today's
 behaviour; `open` stages the PNG in the same extension-storage folder
 recordings use (the existing 7-day sweep covers it) and opens it as a

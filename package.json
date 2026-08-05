@@ -258,7 +258,7 @@
             "save",
             "open"
           ],
-          "default": "save",
+          "default": "open",
           "markdownDescription": "What happens when a screenshot is taken. `save` — write the file: silently into `remoteVnc.screenshotDirectory` when set, otherwise via a save dialog. `open` — stage the file in extension storage and open it as an editor tab without saving; a toast offers **Save As…**."
         },
         "remoteVnc.recordingFormat": {
@@ -283,7 +283,7 @@
             "save",
             "open"
           ],
-          "default": "save",
+          "default": "open",
           "markdownDescription": "What happens when a recording stops. `save` — write the file like screenshots: silently into `remoteVnc.screenshotDirectory` when set, otherwise via a save dialog. `open` — stage the file in extension storage and open it as an editor tab without saving; a toast offers **Save As…**."
         },
         "remoteVnc.viewOnly": {
