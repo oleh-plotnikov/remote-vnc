@@ -127,4 +127,16 @@ export default async function ({ ok, eq }) {
     { name: 'hmi', host: '10.0.0.6', visibleArea: '480x272', futureField: 'keep me' },
     'an unknown field survives read → edit → write, and scope does not'
   );
+
+  // scaleViewport follows the same merge rules as every other optional field.
+  const scaled = applyConnectionEdit(
+    { name: 'n', host: 'h', scaleViewport: false },
+    { host: 'h2' }
+  );
+  eq(scaled.scaleViewport, false, 'scaleViewport survives an unrelated edit');
+  const clearedScaleViewport = applyConnectionEdit(
+    { name: 'n', host: 'h', scaleViewport: false },
+    { scaleViewport: undefined }
+  );
+  eq('scaleViewport' in clearedScaleViewport, false, 'explicit undefined clears scaleViewport');
 }

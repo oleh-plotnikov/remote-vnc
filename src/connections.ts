@@ -9,6 +9,9 @@ export interface SavedConnection {
   autoReconnect?: boolean;
   forceRawEncoding?: boolean;
   parkServerCursor?: boolean;
+  /** Scale to fit the panel (true) or render 1:1 (false); absent = follow
+   *  the global `remoteVnc.scaleViewport` default. */
+  scaleViewport?: boolean;
   /** Visible panel area "WxH" when the server advertises a padded framebuffer. */
   visibleArea?: string;
 }

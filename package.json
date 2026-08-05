@@ -195,6 +195,10 @@
                 "type": "boolean",
                 "description": "Park the server-drawn pointer in the bottom-right corner when idle — for touch-screen devices that paint a pointer arrow into the framebuffer. When omitted, the global \"remoteVnc.parkServerCursor\" default applies."
               },
+              "scaleViewport": {
+                "type": "boolean",
+                "description": "Scale the framebuffer to fit the panel (true) or show it at its original 1:1 size with scrollbars (false). When omitted, the global \"remoteVnc.scaleViewport\" default applies."
+              },
               "visibleArea": {
                 "type": "string",
                 "pattern": "^\\s*\\d{1,5}\\s*[x×]\\s*\\d{1,5}\\s*$",

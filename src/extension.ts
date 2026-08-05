@@ -212,6 +212,7 @@ async function connectEntry(context: vscode.ExtensionContext, entry: ConnectionE
     autoReconnect: entry.autoReconnect,
     forceRawEncoding: entry.forceRawEncoding,
     parkServerCursor: entry.parkServerCursor,
+    scaleViewport: entry.scaleViewport,
     visibleArea: parseVisibleArea(entry.visibleArea),
   });
 }
@@ -749,9 +750,11 @@ async function savePage(
 }
 
 /** A connect request before the global defaults have been applied. */
-type ConnectInput = Omit<ConnectionRequest, 'autoReconnect' | 'parkServerCursor'> & {
+type ConnectInput = Omit<ConnectionRequest, 'autoReconnect' | 'parkServerCursor' | 'scaleViewport'> & {
   autoReconnect?: boolean;
   parkServerCursor?: boolean;
+  /** Per-connection display override; resolved into RfbOptions.scaleViewport. */
+  scaleViewport?: boolean;
 };
 
 /** Apply the unencrypted-traffic warning (once) and then open the session. */
@@ -774,15 +777,17 @@ async function doConnect(context: vscode.ExtensionContext, request: ConnectInput
   // every connect path, so ad-hoc connects and saved entries without the
   // fields follow the global settings. ConnectionRequest requires the
   // resolved booleans, so a future caller of manager.connect cannot skip this.
+  const { scaleViewport, ...req } = request;
+  const options = getRfbOptions();
   await manager.connect(
     {
-      ...request,
-      autoReconnect: effectiveAutoReconnect(request.autoReconnect, getAutoReconnectDefault()),
+      ...req,
+      autoReconnect: effectiveAutoReconnect(req.autoReconnect, getAutoReconnectDefault()),
       parkServerCursor:
-        request.parkServerCursor ??
+        req.parkServerCursor ??
         vscode.workspace.getConfiguration('remoteVnc').get<boolean>('parkServerCursor', false),
     },
-    getRfbOptions()
+    { ...options, scaleViewport: scaleViewport ?? options.scaleViewport }
   );
 }
 
