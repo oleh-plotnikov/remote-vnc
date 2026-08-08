@@ -88,6 +88,12 @@
         "icon": "$(device-camera)"
       },
       {
+        "command": "remoteVnc.cropImage",
+        "title": "Crop Image…",
+        "category": "Remote VNC",
+        "icon": "$(screen-normal)"
+      },
+      {
         "command": "remoteVnc.recordStart",
         "title": "Start Recording",
         "category": "Remote VNC",
@@ -261,6 +267,11 @@
           "default": "open",
           "markdownDescription": "What happens when a screenshot is taken. `save` — write the file: silently into `remoteVnc.screenshotDirectory` when set, otherwise via a save dialog. `open` — stage the file in extension storage and open it as an editor tab without saving; a toast offers **Save As…**."
         },
+        "remoteVnc.screenshotCropEditor": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Which editor a screenshot opened by `remoteVnc.screenshotAction: \"open\"` lands in. `true` — the Remote VNC crop editor: drag a region over the capture and crop it in place. `false` — the built-in image preview. The crop editor stays reachable either way, through **Reopen Editor With…** and **Remote VNC: Crop Image…**."
+        },
         "remoteVnc.recordingFormat": {
           "type": "string",
           "enum": [
@@ -363,6 +374,18 @@
         }
       }
     },
+    "customEditors": [
+      {
+        "viewType": "remoteVnc.crop",
+        "displayName": "Remote VNC Crop",
+        "selector": [
+          {
+            "filenamePattern": "*.png"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {
@@ -483,6 +506,11 @@
         {
           "command": "remoteVnc.recordStop",
           "when": "activeWebviewPanelId == remoteVnc.screen && remoteVnc.recordingActive",
+          "group": "navigation"
+        },
+        {
+          "command": "remoteVnc.cropImage",
+          "when": "activeCustomEditorId == 'imagePreview.previewEditor' && resourceExtname == '.png'",
           "group": "navigation"
         }
       ],

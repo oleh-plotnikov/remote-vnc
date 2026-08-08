@@ -18,6 +18,7 @@ import { SessionsTreeProvider, SessionTreeItem } from './sessionsView';
 import { SavedPage, PageEntry, collectPages, basePagesFor, isValidPageUrl } from './pages';
 import { PagesTreeProvider, PageTreeItem } from './pagesView';
 import { openPagePanel } from './pagePanel';
+import { registerCropEditor, cropActiveImage } from './cropEditor';
 import { logger, disposeLogger } from './log';
 
 const PLAINTEXT_WARNING_KEY = 'remoteVnc.plaintextWarningDismissed';
@@ -47,12 +48,21 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
+    // The crop editor is registered here rather than lazily, because a window
+    // reload can restore a crop tab before any command of ours has run. The
+    // `customEditors` contribution generates `onCustomEditor:remoteVnc.crop`
+    // for that case, which is what keeps `activationEvents` empty.
+    registerCropEditor(context),
     vscode.commands.registerCommand('remoteVnc.connect', () => connectAdHoc(context)),
     vscode.commands.registerCommand('remoteVnc.connectSaved', () => connectSaved(context)),
     vscode.commands.registerCommand('remoteVnc.addConnection', () => addConnection()),
     vscode.commands.registerCommand('remoteVnc.forgetPassword', () => forgetPassword(context)),
     vscode.commands.registerCommand('remoteVnc.disconnect', () => manager.disconnectActive()),
     vscode.commands.registerCommand('remoteVnc.screenshot', () => manager.screenshotActive()),
+    // Takes no argument on purpose: it reads the active tab, so one command
+    // serves the palette, the image-preview title-bar button and any keybinding
+    // a user adds, with no argument-shape contract between them.
+    vscode.commands.registerCommand('remoteVnc.cropImage', () => cropActiveImage()),
     vscode.commands.registerCommand('remoteVnc.recordStart', () => manager.recordActive()),
     vscode.commands.registerCommand('remoteVnc.recordStop', () => manager.stopRecordingActive()),
     // Tree-only commands: hidden from the Command Palette via the

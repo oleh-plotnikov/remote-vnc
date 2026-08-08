@@ -2,7 +2,10 @@ import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import * as os from 'os';
 import { createBridge, VncBridge } from './vncBridge';
-import { captureFilename, pngBytesFromDataUrl, expandHome } from './screenshot';
+import { captureFilename, pngBytesFromDataUrl } from './screenshot';
+import { stagedName } from './screenshotCrop';
+import { openInCropEditor } from './cropEditor';
+import { saveCaptureBytes } from './captureSave';
 import { SessionRegistry, SessionInfo, SessionStatus } from './sessionRegistry';
 import { ReconnectPolicy } from './reconnectPolicy';
 import { describeBridgeClose } from './closeDiagnostics';
@@ -632,7 +635,11 @@ class VncSession {
 
   /** Write a capture where the user keeps files: configured directory
    *  silently, otherwise a save dialog. Shared by screenshots and
-   *  recordings — the flows differ only in wording and filters. */
+   *  recordings — the flows differ only in wording and filters. The body sits
+   *  in `./captureSave` because the crop editor's footer Save does the same job
+   *  for the image its tab is holding, and the destination policy is a promise
+   *  `remoteVnc.screenshotDirectory` makes to the user: two copies of it would
+   *  drift the first time either call site grew a case the other did not. */
   private async saveCapture(
     bytes: Uint8Array,
     name: string,
@@ -640,47 +647,7 @@ class VncSession {
     kind: 'screenshot' | 'recording',
     note = ''
   ): Promise<void> {
-    const configured = vscode.workspace
-      .getConfiguration('remoteVnc')
-      .get<string>('screenshotDirectory', '')
-      .trim();
-    let uri: vscode.Uri | undefined;
-    if (configured) {
-      const dir = vscode.Uri.file(expandHome(configured, os.homedir()));
-      try {
-        await vscode.workspace.fs.createDirectory(dir);
-        uri = vscode.Uri.joinPath(dir, name);
-      } catch (err) {
-        logger().warn(
-          `${kind}: cannot use remoteVnc.screenshotDirectory "${configured}" — ${describeError(err)}; asking instead`
-        );
-      }
-    }
-    if (!uri) {
-      uri = await vscode.window.showSaveDialog({
-        defaultUri: vscode.Uri.file(`${os.homedir()}/${name}`),
-        filters,
-      });
-      if (!uri) {
-        return; // cancelled
-      }
-    }
-    try {
-      await vscode.workspace.fs.writeFile(uri, bytes);
-    } catch (err) {
-      void vscode.window.showErrorMessage(
-        `Remote VNC (${this.label}): could not save the ${kind} — ${describeError(err)}.`
-      );
-      return;
-    }
-    logger().info(`${kind} saved (${this.label}) -> ${uri.fsPath}`);
-    const choice = await vscode.window.showInformationMessage(
-      `Remote VNC: ${kind} saved${note} — ${name}`,
-      'Open'
-    );
-    if (choice === 'Open') {
-      void vscode.commands.executeCommand('vscode.open', uri);
-    }
+    await saveCaptureBytes(bytes, name, filters, kind, this.label, note);
   }
 
   /** Stage a capture in extension storage (no user folder touched) and
@@ -694,24 +661,38 @@ class VncSession {
   ): Promise<void> {
     const dir = vscode.Uri.joinPath(this.globalStorageUri, 'recordings');
     let uri: vscode.Uri;
+    let staged: string;
     try {
-      await vscode.workspace.fs.createDirectory(dir);
-      uri = vscode.Uri.joinPath(dir, name);
-      await vscode.workspace.fs.writeFile(uri, bytes);
+      ({ name: staged, uri } = await claimStagedName(dir, name, bytes));
     } catch (err) {
       void vscode.window.showErrorMessage(
         `Remote VNC (${this.label}): could not stage the ${kind} — ${describeError(err)}.`
       );
       return;
     }
-    await vscode.commands.executeCommand('vscode.open', uri);
+    // A screenshot lands in the crop editor unless the user has said otherwise;
+    // openInCropEditor answers with a boolean rather than throwing, so a tab
+    // that failed to appear falls back to the built-in preview instead of
+    // leaving the capture staged and invisible. A recording is not an image and
+    // keeps vscode.open.
+    const cropEditor =
+      kind === 'screenshot' &&
+      vscode.workspace.getConfiguration('remoteVnc').get<boolean>('screenshotCropEditor', true);
+    if (!cropEditor || !(await openInCropEditor(uri))) {
+      await vscode.commands.executeCommand('vscode.open', uri);
+    }
+    // The crop tab carries a Save of its own, about the image it is currently
+    // showing; this one is the whole-image escape hatch, so the screenshot
+    // wording says which is which. One const feeds both the button and the
+    // comparison, because two literals that have to match eventually will not.
+    const saveLabel = kind === 'screenshot' ? 'Save Full Image As…' : 'Save As…';
     const choice = await vscode.window.showInformationMessage(
       `Remote VNC: ${kind} opened, not saved${note}.`,
-      'Save As…'
+      saveLabel
     );
-    if (choice === 'Save As…') {
+    if (choice === saveLabel) {
       const target = await vscode.window.showSaveDialog({
-        defaultUri: vscode.Uri.file(`${os.homedir()}/${name}`),
+        defaultUri: vscode.Uri.file(`${os.homedir()}/${staged}`),
         filters,
       });
       if (target) {
@@ -862,6 +843,47 @@ function renderHtml(webview: vscode.Webview, extensionUri: vscode.Uri, bridgeUrl
   <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
+}
+
+/**
+ * Serialises staging so that picking a free name and writing it are one step.
+ *
+ * Capture names carry a second-resolution timestamp (`captureFilename` in
+ * src/screenshot.ts), so two captures of one connection inside the same second
+ * ask for the same file — and a held-down screenshot keybinding does exactly
+ * that, because `takeScreenshot` is fire-and-forget. Writing the same name
+ * twice would replace the image an open crop tab is showing, and that tab's
+ * next Crop would put its older pixels back over the newer capture. Choosing a
+ * free name is not enough on its own: two concurrent calls both finish reading
+ * the directory before either writes, so both are handed the same free name.
+ *
+ * The queue is module-level, not per-session: one staging directory serves
+ * every session, and two sessions of the same target share a label and
+ * therefore a capture name. Two VS Code windows sharing global storage stay
+ * outside it by nature — that residue is what the byte comparison in the crop
+ * editor's `stillOurs` exists to catch.
+ */
+let stageQueue: Promise<unknown> = Promise.resolve();
+
+async function claimStagedName(
+  dir: vscode.Uri,
+  name: string,
+  bytes: Uint8Array
+): Promise<{ name: string; uri: vscode.Uri }> {
+  const claim = stageQueue.catch(() => undefined).then(async () => {
+    await vscode.workspace.fs.createDirectory(dir);
+    const listing = await vscode.workspace.fs.readDirectory(dir);
+    const picked = stagedName(
+      name,
+      listing.map(([entry]) => entry)
+    );
+    const uri = vscode.Uri.joinPath(dir, picked);
+    await vscode.workspace.fs.writeFile(uri, bytes);
+    return { name: picked, uri };
+  });
+  // A failed stage must not poison the queue for the next capture.
+  stageQueue = claim.catch(() => undefined);
+  return claim;
 }
 
 function describeError(err: unknown): string {

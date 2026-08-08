@@ -46,6 +46,11 @@ if you would rather install it by hand.
   tab without saving (`remoteVnc.recordingAction`).
 - **Original-size display** — a connection can opt out of scale-to-fit and
   render 1:1 with scrollbars (`scaleViewport` per connection).
+- **Screenshot cropping** — a capture opens in a crop editor rather than the
+  built-in image preview, which can zoom but cannot select a region: drag a
+  rectangle over the screenshot, nudge its edges with the arrow keys, and
+  press Crop to trim the file down to the dialog, the fault message or the
+  one widget that matters (`remoteVnc.screenshotCropEditor`).
 
 ## Usage
 
@@ -58,6 +63,7 @@ Open the Command Palette (`Ctrl/Cmd+Shift+P`) and run one of:
 | **Remote VNC: Add Saved Connection…** | Save a named connection for reuse. |
 | **Remote VNC: Disconnect Active Session** | Close the focused session. |
 | **Remote VNC: Take Screenshot** | Save the current framebuffer as a PNG. Also a 📷 button on connection and session rows and on the viewer tab. |
+| **Remote VNC: Crop Image…** | Open the PNG in the active tab in the crop editor. Also a button on the editor title bar of any PNG shown in the built-in image preview, and a **Reopen Editor With…** entry. |
 
 ### Address formats
 
@@ -81,6 +87,7 @@ Open the Command Palette (`Ctrl/Cmd+Shift+P`) and run one of:
 | `remoteVnc.parkServerCursor` | `false` | Park the server-drawn pointer in the bottom-right corner when idle — for touch-screen devices that paint an arrow into the framebuffer. Per-connection `parkServerCursor` overrides this. |
 | `remoteVnc.screenshotDirectory` | `""` | Folder for one-click screenshot and recording saves (`~` allowed; on the remote under WSL/SSH/containers). Empty = ask every time. |
 | `remoteVnc.screenshotAction` | `"open"` | When a screenshot is taken: `open` as an editor tab (no file kept) or `save` to disk. |
+| `remoteVnc.screenshotCropEditor` | `true` | Open a screenshot in the crop editor instead of the built-in image preview. Applies when `screenshotAction` is `open`. |
 | `remoteVnc.recordingFormat` | `"webm"` | Recording format: `webm` (efficient video) or `gif` (256-color animation). |
 | `remoteVnc.recordingFrameRate` | `10` | Frames per second for recordings (1–30). |
 | `remoteVnc.recordingAction` | `"open"` | When a recording stops: `open` as an editor tab (no file kept) or `save` to disk. |
@@ -89,6 +96,12 @@ Open the Command Palette (`Ctrl/Cmd+Shift+P`) and run one of:
 Recordings stop and save themselves when the connection drops or when you
 run **Disconnect**; closing the viewer tab itself discards an in-progress
 recording. One recording is capped at 10 minutes.
+
+Crop overwrites the file open in the tab: a cropped capture is still the
+staged copy, so it disappears after seven days unless you **Save** it, and
+**Revert** undoes a crop only for as long as the tab stays open. An image
+preview of the same file open in another editor group keeps showing the
+pre-crop image until it is closed and reopened.
 
 ## How it works
 

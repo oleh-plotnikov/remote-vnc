@@ -4,6 +4,35 @@ All notable changes to **Remote VNC** are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-08-08
+
+### Added
+
+- **Screenshot cropping.** A capture taken with **Remote VNC: Take
+  Screenshot** now opens in a crop editor instead of the built-in image
+  preview: drag a rectangle over the screenshot, resize it by its
+  handles or nudge it a pixel at a time with the arrow keys, and press
+  Crop — the file becomes the selected region. The built-in preview can
+  zoom but cannot select a region, so trimming a capture down to the
+  dialog, the fault message or the one widget that matters meant leaving
+  the editor for another tool. `remoteVnc.screenshotCropEditor` (default
+  `true`) decides which editor a screenshot opens in; any other PNG
+  reaches the crop editor through **Remote VNC: Crop Image…**, a button
+  on the title bar of an image preview, or **Reopen Editor With…**.
+  Crop overwrites the file in the tab, **Revert** puts back the bytes
+  the tab opened with, and **Save** copies the result out of staging
+  the same way a capture is saved.
+
+### Changed
+
+- The capture toast's button reads **Save Full Image As…** on the
+  screenshot path, so it cannot be mistaken for the crop editor's own
+  **Save**, which writes the cropped image.
+- A staged capture now takes the first free filename. Capture names have
+  second resolution, so two screenshots of one connection inside the same
+  second shared a name and the second overwrote the file an open tab was
+  still showing; the second capture is now `…-2`.
+
 ## [1.2.2] - 2026-08-05
 
 ### Fixed

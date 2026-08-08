@@ -110,12 +110,28 @@ takes the desired name and the directory listing and returns the first free
 `name`, `name-2`, `name-3`, … The tab title carries the suffix, which is
 honest.
 
+Picking a free name is not by itself enough. `takeScreenshot` is
+fire-and-forget, so a held-down keybinding runs two captures at once and both
+finish reading the directory before either writes — handing both the same free
+name. The pick and the write are therefore one critical section, serialised
+through a module-level queue: module-level and not per-session, because one
+staging directory serves every session and two sessions of the same target
+share a label and so a capture name. Two VS Code windows sharing global
+storage stay outside that queue by nature, which is the residue the byte
+comparison below exists to catch.
+
 Closed again at the write, because a name collision is not the only way a
 file can move under an open tab: before every overwrite the provider
 re-reads the file and compares it byte-for-byte with what it last wrote or
 read. A mismatch refuses the write —
 `Remote VNC: this file changed outside the crop editor; reopen it to crop
 the current image.` — and nothing is lost.
+
+A file that has *gone* refuses the same way but is worded differently, because
+the advice differs. The sweep runs un-awaited at startup, so a window reload
+can restore a tab onto a capture the sweep then deletes: that tab is holding
+the last copy of the image, and telling its owner to reopen it would be telling
+them to discard it. That case points at `Save` instead, which still works.
 
 ### (b) The 7-day sweep
 

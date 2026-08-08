@@ -95,8 +95,31 @@ const webviewConfig = {
   logLevel: 'info',
 };
 
+/** Crop editor bundle (browser context, runs inside the crop tab).
+ *
+ *  Deliberately banner-less, unlike the other two: it imports nothing but
+ *  src/screenshotCrop.ts, which is first-party and dependency-free by design,
+ *  so there is no third-party code inside it to attribute. Confirm that with
+ *  the metafile snippet in AGENTS.md before adding an import here — the moment
+ *  something from node_modules ends up in this output, it needs a banner and an
+ *  entry in THIRD-PARTY-NOTICES.md like the others.
+ *
+ *  No `splitting` either: the tab's CSP admits exactly one nonce'd script, so a
+ *  chunk emitted beside the entry point would be blocked with no error. */
+const cropEditorConfig = {
+  entryPoints: ['media/cropEditor.ts'],
+  bundle: true,
+  format: 'esm',
+  platform: 'browser',
+  target: 'es2022',
+  outfile: 'media/cropEditor.js',
+  sourcemap: !production,
+  minify: production,
+  logLevel: 'info',
+};
+
 async function main() {
-  const configs = [extensionConfig, webviewConfig];
+  const configs = [extensionConfig, webviewConfig, cropEditorConfig];
   if (watch) {
     const contexts = await Promise.all(
       configs.map((c) => esbuild.context({ ...c, plugins: [watchPlugin] }))

@@ -1,0 +1,258 @@
+/* Styles for the crop editor tab.
+
+   Deliberately a separate file, not an extension of media/style.css. That one
+   dresses the VNC panel: it carries noVNC-specific `!important` rules for the
+   cursor and for the container's inline overflow, and it sets
+   `overflow: hidden` on html, body (media/style.css:11). Hiding overflow is
+   right for a framebuffer that is always scaled into its own panel and wrong
+   here, where an image larger than the tab has to be reachable to be
+   croppable. Nothing in this file is shared with that one. */
+
+:root {
+  color-scheme: dark light;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--vscode-editor-background, #1e1e1e);
+  color: var(--vscode-foreground, #ccc);
+  font-family: var(--vscode-font-family, sans-serif);
+  font-size: var(--vscode-font-size, 13px);
+}
+
+/* Fixed header, flexible stage, fixed footer. */
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+.bar,
+.foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: var(--vscode-editorWidget-background, rgba(40, 40, 40, 0.9));
+}
+
+.bar {
+  border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(255, 255, 255, 0.1));
+}
+
+.foot {
+  border-top: 1px solid var(--vscode-editorWidget-border, rgba(255, 255, 255, 0.1));
+}
+
+.srcsize,
+.hint {
+  flex: none;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+}
+
+/* The hint trails the buttons at the far end of the footer, and takes the
+   slack so a long one shrinks instead of widening the whole document. */
+.hint {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+}
+
+/* The readout is the number the user verifies the crop against, so it is set
+   in the editor font: proportional digits change width as the selection
+   changes and the whole line jitters while dragging. */
+.readout {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+}
+
+.badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--vscode-badge-foreground, #fff);
+  background: var(--vscode-badge-background, #4d4d4d);
+}
+
+/* Centring must come from `margin: auto` on the child of a flex container,
+   never from `justify-content`/`align-items: center` — see media/style.css:29-43,
+   where this repo already hit and fixed the bug: with plain flex centring the
+   top and left overflow edges of oversized content cannot be scrolled to.
+   `min-height: 0` is what lets this flex item shrink below the frame and
+   scroll at all. */
+.stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  overflow: auto;
+  user-select: none;
+}
+
+.stage > .frame {
+  margin: auto;
+  flex: none;
+}
+
+/* The stage holds focus because arrow keys nudge the selection. Only
+   `:focus-visible`, so pressing on the image to drag does not ring it. */
+.stage:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, #0078d4);
+  outline-offset: -1px;
+}
+
+/* The script sizes the frame to the scaled image and positions every overlay
+   in those same scaled coordinates, so this is the containing block they all
+   resolve against. `touch-action` keeps a drag from being taken as a pan. */
+.frame {
+  position: relative;
+  touch-action: none;
+  cursor: crosshair;
+  background: var(--vscode-editor-background, #1e1e1e);
+}
+
+/* Selectors here are class-based like media/style.css, which also keeps every
+   rule at a specificity the `[hidden]` rule at the foot of the file can tie.
+   The canvas is the one exception: it carries no class. `display: block`
+   removes the inline baseline gap that would otherwise make the frame a few
+   pixels taller than the image inside it. */
+#view {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Pixelation is only honest at scale >= 1, and only the script knows the
+   scale; this is the hook it toggles. Smooth otherwise. */
+#view.crisp {
+  image-rendering: pixelated;
+}
+
+/* Four rectangles dim what the crop would discard — exact at any size, unlike
+   a 9999px box-shadow. This rgba() is a non-token value on purpose (the white
+   handle ring below is the only other one): there is no VS Code scrim token,
+   and darkening reads as "excluded" in both light and dark themes. */
+.scrim {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+/* Nothing is excluded until something is selected. */
+.stage[data-state='empty'] .scrim {
+  display: none;
+}
+
+/* An outline, not a border: a border would grow the box and put the drawn
+   rectangle a pixel away from the integers the readout is promising. */
+.sel {
+  position: absolute;
+  outline: 1px solid var(--vscode-focusBorder, #0078d4);
+  cursor: move;
+}
+
+/* The ring is white rather than a theme colour because it has to stay visible
+   against the screenshot underneath, and the screenshot owes the theme
+   nothing. */
+.sel .h {
+  position: absolute;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border: 1px solid #fff;
+  background: var(--vscode-focusBorder, #0078d4);
+}
+
+/* 10px is the right size to see and the wrong size to hit, so an invisible
+   inset pads every handle out to about 16px of pointer target. */
+.sel .h::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+}
+
+.sel .h[data-dir='nw'] { top: -5px; left: -5px; cursor: nw-resize; }
+.sel .h[data-dir='n'] { top: -5px; left: calc(50% - 5px); cursor: n-resize; }
+.sel .h[data-dir='ne'] { top: -5px; right: -5px; cursor: ne-resize; }
+.sel .h[data-dir='e'] { top: calc(50% - 5px); right: -5px; cursor: e-resize; }
+.sel .h[data-dir='se'] { bottom: -5px; right: -5px; cursor: se-resize; }
+.sel .h[data-dir='s'] { bottom: -5px; left: calc(50% - 5px); cursor: s-resize; }
+.sel .h[data-dir='sw'] { bottom: -5px; left: -5px; cursor: sw-resize; }
+.sel .h[data-dir='w'] { top: calc(50% - 5px); left: -5px; cursor: w-resize; }
+
+/* The failure state keeps the tab and swaps the picture for prose. The stage
+   stops flexing so the message lands in the middle of the tab rather than
+   below an empty scroll area. */
+.stage[data-state='dead'] {
+  flex: none;
+}
+
+.stage[data-state='dead'] .frame {
+  display: none;
+}
+
+.dead {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+}
+
+.btn {
+  flex: none;
+  padding: 4px 12px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 2px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--vscode-button-secondaryForeground, #ccc);
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+}
+
+.btn.primary {
+  color: var(--vscode-button-foreground, #fff);
+  background: var(--vscode-button-background, #0078d4);
+}
+
+/* `:not(.primary)` rather than relying on source order: the two hover rules
+   are then mutually exclusive instead of settling a specificity tie. */
+.btn:not(.primary):enabled:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
+}
+
+.btn.primary:enabled:hover {
+  background: var(--vscode-button-hoverBackground, #026ec1);
+}
+
+.btn:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, #0078d4);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The script hides elements with the attribute, so the attribute has to beat
+   the display values above. Last in the file on purpose: it ties with those
+   class selectors on specificity and wins on order. */
+[hidden] {
+  display: none;
+}

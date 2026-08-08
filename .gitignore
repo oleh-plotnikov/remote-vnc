@@ -2,6 +2,8 @@ node_modules/
 dist/
 media/webview.js
 media/webview.js.map
+media/cropEditor.js
+media/cropEditor.js.map
 *.vsix
 .DS_Store
 

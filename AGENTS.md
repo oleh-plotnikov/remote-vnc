@@ -8,10 +8,10 @@ machinery, the conventions, and the traps that have already cost time once.
 
 ```bash
 npm install
-npm run build      # bundle both outputs once
+npm run build      # bundle all three outputs once
 npm run watch      # rebuild on change; reload the window to pick changes up
 npm run typecheck  # tsc --noEmit
-npm test           # 63 tests, plain Node, no framework
+npm test           # 257 tests, plain Node, no framework
 npm run package    # production build (minified, no sourcemaps)
 ```
 
@@ -27,9 +27,11 @@ npm run package    # production build (minified, no sourcemaps)
 | `src/pagePanel.ts` | The "Web Pages" editor tabs |
 | `src/*View.ts` | Activity Bar tree views |
 | `media/webview.ts` | Runs inside the panel; imports noVNC. Never touches VS Code APIs |
+| `src/cropEditor.ts` | The screenshot crop editor's host half; `media/cropEditor.ts` is its webview |
+| `src/screenshotCrop.ts` | Crop geometry, imported by both halves, so it stays free of `vscode` and of Node globals |
 | `test/run.mjs` | Discovers `*.test.mjs`, calls each default export with `{ ok, eq }` |
 | `test/bundle.mjs` | Builds a module from `src/` against a `vscode` stub, for unit tests |
-| `esbuild.js` | Two bundles: extension host (CJS/node) and webview (ESM/browser) |
+| `esbuild.js` | Three bundles: extension host (CJS/node), webview and crop editor (ESM/browser) |
 
 ## Things that are easy to get wrong
 
