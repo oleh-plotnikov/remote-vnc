@@ -11,7 +11,7 @@ npm install
 npm run build      # bundle all three outputs once
 npm run watch      # rebuild on change; reload the window to pick changes up
 npm run typecheck  # tsc --noEmit
-npm test           # 257 tests, plain Node, no framework
+npm test           # 274 assertions, plain Node, no framework
 npm run package    # production build (minified, no sourcemaps)
 ```
 
@@ -31,6 +31,7 @@ npm run package    # production build (minified, no sourcemaps)
 | `src/screenshotCrop.ts` | Crop geometry, imported by both halves, so it stays free of `vscode` and of Node globals |
 | `test/run.mjs` | Discovers `*.test.mjs`, calls each default export with `{ ok, eq }` |
 | `test/bundle.mjs` | Builds a module from `src/` against a `vscode` stub, for unit tests |
+| `test/bundleAttribution.test.mjs` | Builds every shipped bundle and checks its banner against what is really inside it |
 | `esbuild.js` | Three bundles: extension host (CJS/node), webview and crop editor (ESM/browser) |
 
 ## Things that are easy to get wrong
@@ -46,12 +47,26 @@ bundled, add it to the banner and to `THIRD-PARTY-NOTICES.md`.
 
 What actually ships inside `media/webview.js` is 52 noVNC files, which include
 `vendor/pako/` (MIT) and `core/crypto/des.js` (its notice must be kept intact) —
-not just noVNC's own MPL-2.0 code. To re-check after a dependency bump:
+not just noVNC's own MPL-2.0 code.
+
+You do not have to remember any of this. Two tests split the job, and both run
+under `npm test`:
+
+| Test | What it can see |
+| --- | --- |
+| `thirdPartyNotices.test.mjs` | The *wording*. Pins the notice texts and banner copyright lines in `THIRD-PARTY-NOTICES.md` and `esbuild.js` to the installed packages, so a dependency bump cannot leave a stale notice. |
+| `bundleAttribution.test.mjs` | The *reality*. Minifies every config `esbuild.js` exports and compares each bundle's real `node_modules` inputs against the banner at the top of the built output. A package it has no attribution name for fails the run. |
+
+The second is why `esbuild.js` exports `configs` and only builds when run as a
+script. It also means a new bundle is covered the moment it joins that array —
+there is no per-bundle command to remember to run. To look at one bundle's
+inputs by hand anyway:
 
 ```bash
-node -e "require('esbuild').build({entryPoints:['media/webview.ts'],bundle:true,
-  format:'esm',platform:'browser',write:false,metafile:true}).then(r=>
-  console.log(Object.keys(r.metafile.inputs).filter(k=>k.includes('node_modules'))))"
+node -e "const {configs}=require('./esbuild.js');
+  Promise.all(configs.map(c=>require('esbuild').build({...c,write:false,metafile:true})
+    .then(r=>console.log(c.outfile,
+      Object.keys(r.metafile.inputs).filter(k=>k.includes('node_modules')).length))))"
 ```
 
 **`.vscodeignore` matches source by extension, not by filename.** It used to list

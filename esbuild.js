@@ -99,10 +99,10 @@ const webviewConfig = {
  *
  *  Deliberately banner-less, unlike the other two: it imports nothing but
  *  src/screenshotCrop.ts, which is first-party and dependency-free by design,
- *  so there is no third-party code inside it to attribute. Confirm that with
- *  the metafile snippet in AGENTS.md before adding an import here — the moment
- *  something from node_modules ends up in this output, it needs a banner and an
- *  entry in THIRD-PARTY-NOTICES.md like the others.
+ *  so there is no third-party code inside it to attribute. Nothing here needs
+ *  to be remembered — `test/bundleAttribution.test.mjs` builds every config
+ *  below and fails if any of them acquires a `node_modules` input its banner
+ *  does not name, so an import added here reports itself.
  *
  *  No `splitting` either: the tab's CSP admits exactly one nonce'd script, so a
  *  chunk emitted beside the entry point would be blocked with no error. */
@@ -118,8 +118,12 @@ const cropEditorConfig = {
   logLevel: 'info',
 };
 
+/** Every bundle that ships, in build order. Exported so the attribution test
+ *  can build these exact configs rather than a copy of them: a copy is the one
+ *  thing guaranteed to drift, and drift is what the test exists to catch. */
+const configs = [extensionConfig, webviewConfig, cropEditorConfig];
+
 async function main() {
-  const configs = [extensionConfig, webviewConfig, cropEditorConfig];
   if (watch) {
     const contexts = await Promise.all(
       configs.map((c) => esbuild.context({ ...c, plugins: [watchPlugin] }))
@@ -131,7 +135,15 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+module.exports = { configs };
+
+// Only build when run as a script. Requiring this file — which the attribution
+// test does, to get at `configs` — must not kick off a build and must not
+// overwrite the developer's current output with one built under whatever flags
+// the test process happened to be started with.
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
