@@ -24,7 +24,9 @@ import {
 type CropExtensionMessage =
   | {
       type: 'image';
-      bytes: Uint8Array;
+      // An ArrayBuffer, not a Uint8Array: see `toArrayBuffer` on the host side.
+      // A TypedArray does not survive the webview transport as one.
+      bytes: ArrayBuffer;
       width: number;
       height: number;
       name: string;
@@ -467,6 +469,38 @@ function goDead(reason: string): void {
   deadBox.hidden = false;
 }
 
+/**
+ * The image payload as something `Blob` will accept, or undefined with the
+ * reason already in the Output channel.
+ *
+ * The shape that arrives is worth checking rather than assuming. Only an
+ * `ArrayBuffer` is documented to be recreated across the webview transport; a
+ * `Uint8Array` sent as a message field arrives as a plain index object, and
+ * `new Blob([…])` would quietly turn that into the fifteen characters
+ * "[object Object]" — a blob that fails to decode and reports nothing except
+ * that the file is not an image. Naming what actually came through is the
+ * difference between a one-line fix and an afternoon. A view is accepted too:
+ * it is equally usable, and refusing it would be pedantry.
+ */
+function imageBuffer(bytes: unknown): ArrayBuffer | undefined {
+  if (bytes instanceof ArrayBuffer) {
+    return bytes;
+  }
+  if (ArrayBuffer.isView(bytes)) {
+    const view = bytes as Uint8Array;
+    const copy = new Uint8Array(view.byteLength);
+    copy.set(view);
+    return copy.buffer;
+  }
+  const shape =
+    bytes === null || bytes === undefined
+      ? String(bytes)
+      : `${(bytes as object).constructor?.name ?? typeof bytes} with ` +
+        `${typeof bytes === 'object' ? Object.keys(bytes as object).length : 0} keys`;
+  logOnce('error', `crop editor received ${shape} where the image bytes should be`);
+  return undefined;
+}
+
 async function showImage(msg: Extract<CropExtensionMessage, { type: 'image' }>): Promise<void> {
   fileName = msg.name;
   staged = msg.staged;
@@ -477,12 +511,14 @@ async function showImage(msg: Extract<CropExtensionMessage, { type: 'image' }>):
   selection = undefined;
   drag = undefined;
   const token = ++decoding;
+  const buffer = imageBuffer(msg.bytes);
+  if (!buffer) {
+    goDead('The image did not arrive intact. See the "Remote VNC" output for details.');
+    return;
+  }
   let next: ImageBitmap;
   try {
-    // The buffer type TypeScript gives a Uint8Array admits a SharedArrayBuffer
-    // and BlobPart does not, so the assertion states what structured clone
-    // already guarantees; it costs nothing and copies nothing at runtime.
-    const png = new Blob([msg.bytes as ArrayBufferView<ArrayBuffer>], { type: 'image/png' });
+    const png = new Blob([buffer], { type: 'image/png' });
     next = await createImageBitmap(png);
   } catch (err) {
     logOnce('error', `crop editor could not decode the image: ${describe(err)}`);

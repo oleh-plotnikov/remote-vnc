@@ -248,7 +248,7 @@ inbound-only mirror at the top of `media/cropEditor.ts`.
 
 ```ts
 type CropExtensionMessage =
-  | { type: 'image'; bytes: Uint8Array; width: number; height: number;
+  | { type: 'image'; bytes: ArrayBuffer; width: number; height: number;
       name: string; staged: boolean; cropped: boolean }
   | { type: 'unavailable'; reason: string };
 
@@ -261,12 +261,25 @@ type CropWebviewMessage =
   | { type: 'log'; level: 'info' | 'error'; message: string };
 ```
 
-Bytes cross as a real `Uint8Array`, never `asWebviewUri`: `globalStorageUri`
-is not in the default `localResourceRoots`, and at `engines.vscode ^1.84.0`
-(≥ 1.57) there is no base64 inflation. The editor therefore works for any
+Bytes cross as an `ArrayBuffer`, never `asWebviewUri`: `globalStorageUri` is
+not in the default `localResourceRoots`. The editor therefore works for any
 path on any filesystem provider — remote, WSL, container, virtual — there is
 no HTTP cache in the path so no cache-buster is needed, and the webview is
 never handed a filesystem URI.
+
+`ArrayBuffer` specifically, and the distinction is the whole payload. From
+1.57 the transport recreates an `ArrayBuffer` that appears in a message, but
+`Webview.postMessage` says of a TypedArray — which is what
+`workspace.fs.readFile` returns — that it "will be very inefficiently
+serialized and will also not be recreated as a typed array inside the
+webview". Sent as a `Uint8Array` the field arrives as a plain index object and
+`new Blob([…])` stringifies it to the fifteen characters `[object Object]`, so
+the tab reports a file it cannot decode and names the file rather than the
+cause. The host copies into an exact-size buffer rather than passing
+`bytes.buffer`, which for a Node `Buffer` is a window onto a shared 8 KB pool;
+`Buffer.prototype.slice` is no escape, since unlike `Uint8Array`'s it returns
+a view. The webview checks the shape it actually received and logs it by name,
+so the same mistake can never again present as a generic decode failure.
 
 `ready` is idempotent: a webview reload re-fires it and the host re-posts the
 bytes it holds, so the tab heals with no extra host state. This is the

@@ -484,16 +484,18 @@ class CropEditorProvider implements vscode.CustomReadonlyEditorProvider<CropDocu
 /**
  * The two halves of the protocol, hand-kept on both sides — this repo has no
  * shared protocol module, and `media/cropEditor.ts` mirrors the inbound half at
- * its top. Bytes cross as a real `Uint8Array` rather than through
- * `asWebviewUri`: `globalStorageUri` is not in the default `localResourceRoots`,
- * and at this engine version postMessage no longer inflates binary to base64,
- * so the editor works for any path on any filesystem provider and the webview
- * is never handed a filesystem URI.
+ * its top. Bytes cross as an `ArrayBuffer` rather than through `asWebviewUri`:
+ * `globalStorageUri` is not in the default `localResourceRoots`, so the editor
+ * works for any path on any filesystem provider and the webview is never handed
+ * a filesystem URI.
+ *
+ * `ArrayBuffer` and not `Uint8Array`, and the difference is the whole payload
+ * rather than a detail — see `toArrayBuffer`.
  */
 type CropExtensionMessage =
   | {
       type: 'image';
-      bytes: Uint8Array;
+      bytes: ArrayBuffer;
       width: number;
       height: number;
       name: string;
@@ -574,13 +576,37 @@ function renderCropHtml(webview: vscode.Webview, extensionUri: vscode.Uri): stri
 function imageMessage(entry: CropEntry): CropExtensionMessage {
   return {
     type: 'image',
-    bytes: entry.current,
+    bytes: toArrayBuffer(entry.current),
     width: entry.width,
     height: entry.height,
     name: basename(entry.uri),
     staged: entry.staged,
     cropped: entry.cropped,
   };
+}
+
+/**
+ * The capture as a standalone `ArrayBuffer`, which is the only binary shape the
+ * webview transport is documented to put back together.
+ *
+ * `Webview.postMessage` (vscode.d.ts) promises that an `ArrayBuffer` appearing
+ * in a message is "correctly recreated inside of the webview" from 1.57 on, and
+ * says of a TypedArray — which is exactly what `workspace.fs.readFile` returns
+ * — that it "will be very inefficiently serialized and will also not be
+ * recreated as a typed array inside the webview". Sending the `Uint8Array`
+ * directly therefore delivers a plain index object; `new Blob([…])` stringifies
+ * that to "[object Object]", and the tab dies reporting a file it cannot
+ * decode, naming the file rather than the cause.
+ *
+ * The copy is not incidental either. `bytes.buffer` can be a window onto a
+ * larger allocation — Node pools small buffers — so handing it over would send
+ * whatever else shares the pool. `Buffer.prototype.slice` is no way out: unlike
+ * `Uint8Array`'s, it returns a view rather than a copy.
+ */
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
 }
 
 /** The shape guard the webview's own listener already applies to what we send

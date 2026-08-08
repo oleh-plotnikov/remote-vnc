@@ -203,14 +203,28 @@ body {
   display: none;
 }
 
+/* The failure state is two lines — what went wrong, then which file — and they
+   are stacked. Without an explicit column direction the flex default is `row`,
+   which runs the sentence and the file name together into one string with no
+   space between them ("…can read.shot.png"). */
 .dead {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   padding: 24px;
   text-align: center;
   color: var(--vscode-descriptionForeground, #9d9d9d);
+}
+
+/* The file name is the subordinate line, and it is untrusted text that can be
+   long: it must wrap anywhere rather than push the tab into a sideways scroll. */
+.dead > div + div {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
 }
 
 .btn {
