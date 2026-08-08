@@ -50,7 +50,9 @@ if you would rather install it by hand.
   built-in image preview, which can zoom but cannot select a region: drag a
   rectangle over the screenshot, nudge its edges with the arrow keys, and
   press Crop to trim the file down to the dialog, the fault message or the
-  one widget that matters (`remoteVnc.screenshotCropEditor`).
+  one widget that matters (`remoteVnc.screenshotCropEditor`). The same tab
+  copies the selection — or the whole image — straight to the clipboard,
+  without cropping and without saving a file.
 
 ## Usage
 
@@ -102,6 +104,12 @@ staged copy, so it disappears after seven days unless you **Save** it, and
 **Revert** undoes a crop only for as long as the tab stays open. An image
 preview of the same file open in another editor group keeps showing the
 pre-crop image until it is closed and reopened.
+
+**Copy** is the exception: it writes no file at all. With a selection it
+copies that region, without one the whole image, and the button says which.
+The copy is made inside the tab rather than by the extension host, so under
+Remote-SSH, WSL or a container it reaches the clipboard of the machine you
+are sitting at rather than the one the host runs on.
 
 ## How it works
 

@@ -53,7 +53,17 @@ A fixed header, the image centred, a fixed footer.
   is smaller than one CSS pixel.
 - **Header right** — for a staged capture, a persistent badge:
   `Staged copy — removed after 7 days`.
-- **Footer** — `Crop` (primary) · `Revert` · `Save` · `Open as Image`.
+- **Footer** — `Crop` (primary) · `Revert` · `Copy` · `Save` ·
+  `Open as Image`.
+
+`Copy` is the only control here that writes nothing. It puts the selection on
+the clipboard, or the whole image when nothing is selected, and its label says
+which of the two it will do rather than leaving the user to remember whether a
+selection is live. It has to happen in the webview: VS Code's clipboard API
+carries text only, and under a remote the extension host would be writing the
+far machine's clipboard while the tab, and the user, are local. A rejected
+clipboard write raises a toast — a clipboard that quietly refused looks exactly
+like a successful copy until the paste comes up empty.
 
 The image is scaled to fit the tab by `fitScale`, **upscaling allowed**, with
 `image-rendering: pixelated` at scale ≥ 1. The motivating hardware for this
@@ -257,6 +267,7 @@ type CropWebviewMessage =
   | { type: 'crop'; rect?: CropRect; dataUrl?: string; error?: string }
   | { type: 'revert' }
   | { type: 'save' }
+  | { type: 'copy'; width?: number; height?: number; error?: string }
   | { type: 'reopen' }
   | { type: 'log'; level: 'info' | 'error'; message: string };
 ```

@@ -22,6 +22,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Crop overwrites the file in the tab, **Revert** puts back the bytes
   the tab opened with, and **Save** copies the result out of staging
   the same way a capture is saved.
+- **Copy to the clipboard** from the crop editor. The button copies the
+  selection when there is one and the whole image when there is not —
+  its label says which — and never touches the file, so pasting a region
+  into a chat or an issue needs no crop and no saved file. The copy is
+  made in the tab rather than by the extension host, which is what makes
+  it land in *your* clipboard when VS Code is attached to a remote.
 
 ### Changed
 

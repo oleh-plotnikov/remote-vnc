@@ -92,6 +92,7 @@ const sel = document.getElementById('sel') as HTMLDivElement;
 const deadBox = document.getElementById('dead') as HTMLDivElement;
 const cropBtn = document.getElementById('crop') as HTMLButtonElement;
 const revertBtn = document.getElementById('revert') as HTMLButtonElement;
+const copyBtn = document.getElementById('copy') as HTMLButtonElement;
 const saveBtn = document.getElementById('save') as HTMLButtonElement;
 const reopenBtn = document.getElementById('reopen') as HTMLButtonElement;
 const hint = document.getElementById('hint') as HTMLSpanElement;
@@ -189,6 +190,11 @@ function render(): void {
  *  stage state and the controls that only mean something with one. */
 function paint(): void {
   cropBtn.disabled = !selection;
+  // The label says which of the two things the button will do, rather than
+  // leaving the user to remember whether a selection is live. Copy is the one
+  // action here that reads the selection without writing the file, so it is
+  // also the only one where getting that wrong is silent.
+  copyBtn.textContent = selection ? 'Copy Selection' : 'Copy Image';
   hint.textContent = selection ? HINT_KEYS : cropped && staged ? HINT_STAGED : HINT_SELECT;
   if (!selection) {
     // Nothing is selected, so nothing is excluded — the stage stays 'empty'
@@ -394,6 +400,10 @@ revertBtn.addEventListener('click', () => {
   post({ type: 'revert' });
   stage.focus();
 });
+copyBtn.addEventListener('click', () => {
+  void copyToClipboard();
+  stage.focus();
+});
 saveBtn.addEventListener('click', () => {
   post({ type: 'save' });
   stage.focus();
@@ -421,21 +431,93 @@ function cut(): void {
     post({ type: 'crop', error: 'the selection is not a usable rectangle' });
     return;
   }
-  const { x, y, width, height } = rect;
   try {
-    const out = document.createElement('canvas');
-    out.width = width;
-    out.height = height;
-    const ctx = out.getContext('2d');
-    if (!ctx) {
+    const out = regionCanvas(rect);
+    if (!out) {
       post({ type: 'crop', error: 'no 2D context for the cut' });
       return;
     }
-    ctx.drawImage(bitmap, x, y, width, height, 0, 0, width, height);
     post({ type: 'crop', rect, dataUrl: out.toDataURL('image/png') });
   } catch (err) {
     post({ type: 'crop', error: describe(err) });
   }
+}
+
+/** One region of the source bitmap at 1:1, on a canvas of exactly its size. */
+function regionCanvas(rect: CropRect): HTMLCanvasElement | undefined {
+  if (!bitmap) {
+    return undefined;
+  }
+  const out = document.createElement('canvas');
+  out.width = rect.width;
+  out.height = rect.height;
+  const ctx = out.getContext('2d');
+  if (!ctx) {
+    return undefined;
+  }
+  ctx.drawImage(bitmap, rect.x, rect.y, rect.width, rect.height, 0, 0, rect.width, rect.height);
+  return out;
+}
+
+/**
+ * Put the selection — or the whole image, when there is none — on the system
+ * clipboard, without touching the file.
+ *
+ * This belongs in the webview and not on the host, and not by preference: VS
+ * Code's clipboard API carries text only, and under a remote (Remote-SSH, WSL,
+ * containers) the extension host runs on the far machine, so anything it copied
+ * would land in that machine's clipboard. The tab renders locally, which is
+ * where the user's clipboard actually is.
+ */
+async function copyToClipboard(): Promise<void> {
+  if (!bitmap) {
+    return;
+  }
+  const whole = { x: 0, y: 0, width: imgW, height: imgH };
+  const rect = selection ? clampCropRect(selection, imgW, imgH) ?? whole : whole;
+  if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) {
+    post({ type: 'copy', error: 'this editor build exposes no image clipboard' });
+    return;
+  }
+  try {
+    const canvas = regionCanvas(rect);
+    if (!canvas) {
+      post({ type: 'copy', error: 'no 2D context for the copy' });
+      return;
+    }
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) {
+      post({ type: 'copy', error: 'the image could not be encoded as a PNG' });
+      return;
+    }
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    flash(selection ? 'Selection copied' : 'Image copied');
+    post({ type: 'copy', width: rect.width, height: rect.height });
+  } catch (err) {
+    // A rejection here is usually the clipboard permission, which depends on
+    // the host window having focus — worth saying out loud rather than leaving
+    // the user to wonder why nothing pasted.
+    post({ type: 'copy', error: describe(err) });
+  }
+}
+
+/**
+ * A short-lived confirmation in the hint line. `paint` owns that text and
+ * re-derives it from the selection, so it is also what undoes this — the
+ * confirmation cannot outlive the next interaction, and there is no second
+ * place deciding what the hint says.
+ */
+let flashTimer: ReturnType<typeof setTimeout> | undefined;
+
+function flash(text: string): void {
+  hint.textContent = text;
+  if (flashTimer !== undefined) {
+    clearTimeout(flashTimer);
+  }
+  flashTimer = setTimeout(() => {
+    flashTimer = undefined;
+    paint();
+  }, 2000);
 }
 
 /**
@@ -454,7 +536,7 @@ function goDead(reason: string): void {
   sel.hidden = true;
   bar.hidden = true;
   hint.textContent = '';
-  for (const button of [cropBtn, revertBtn, saveBtn]) {
+  for (const button of [cropBtn, revertBtn, copyBtn, saveBtn]) {
     button.hidden = true;
   }
   deadBox.replaceChildren(
@@ -544,7 +626,7 @@ async function showImage(msg: Extract<CropExtensionMessage, { type: 'image' }>):
   }
   bar.hidden = false;
   deadBox.hidden = true;
-  for (const button of [cropBtn, revertBtn, saveBtn]) {
+  for (const button of [cropBtn, revertBtn, copyBtn, saveBtn]) {
     button.hidden = false;
   }
   srcsize.textContent = `${imgW} × ${imgH}`;

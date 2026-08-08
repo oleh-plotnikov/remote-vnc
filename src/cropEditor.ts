@@ -287,6 +287,27 @@ class CropEditorProvider implements vscode.CustomReadonlyEditorProvider<CropDocu
         await saveCaptureBytes(entry.current, name, { 'PNG image': ['png'] }, 'crop', name);
         return;
       }
+      case 'copy':
+        // The copy itself happened in the webview, which is the only place it
+        // can: VS Code's clipboard carries text alone, and under a remote the
+        // extension host would be writing the far machine's clipboard while the
+        // tab — and the user — are here. All that is left is to say so, and a
+        // failure is worth a toast because nothing else would show one: a
+        // clipboard that quietly refused looks exactly like a successful copy
+        // until the paste comes up empty.
+        if (msg.error) {
+          logger().error(
+            `crop: could not copy ${basename(entry.uri)} to the clipboard — ${msg.error}`
+          );
+          void vscode.window.showWarningMessage(
+            `Remote VNC: could not copy the image to the clipboard — ${msg.error}.`
+          );
+        } else {
+          logger().info(
+            `crop: copied ${msg.width}x${msg.height} of ${basename(entry.uri)} to the clipboard`
+          );
+        }
+        return;
       case 'reopen':
         await vscode.commands.executeCommand(
           'vscode.openWith',
@@ -509,6 +530,7 @@ type CropWebviewMessage =
   | { type: 'crop'; rect?: CropRect; dataUrl?: string; error?: string }
   | { type: 'revert' }
   | { type: 'save' }
+  | { type: 'copy'; width?: number; height?: number; error?: string }
   | { type: 'reopen' }
   | { type: 'log'; level: 'info' | 'error'; message: string };
 
@@ -562,6 +584,9 @@ function renderCropHtml(webview: vscode.Webview, extensionUri: vscode.Uri): stri
     <button id="revert" class="btn"
       title="Restore the image this tab opened with. Closing the tab discards this undo."
       disabled>Revert</button>
+    <button id="copy" class="btn"
+      title="Copy the selection, or the whole image when nothing is selected, to the clipboard. The file is not touched."
+      >Copy Image</button>
     <button id="save" class="btn">Save</button>
     <button id="reopen" class="btn">Open as Image</button>
     <span id="hint" class="hint"></span>
