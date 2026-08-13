@@ -1,4 +1,5 @@
 import * as net from 'net';
+import * as http from 'http';
 import * as crypto from 'crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 
@@ -94,6 +95,17 @@ function createBridgeOn(
       port: listenPort,
       // noVNC historically negotiates the legacy "binary" subprotocol.
       handleProtocols: (protocols) => (protocols.has('binary') ? 'binary' : false),
+      // The token is checked HERE, before the protocol switch, rather than on
+      // the established connection. WebSockets are not subject to the
+      // same-origin policy, so any page in any browser on this machine can
+      // open one against a loopback port; answering 101 and only then closing
+      // 1008 told such a page the difference between a live bridge and a dead
+      // port, which is precisely the fact worth hiding — and with a fixed
+      // `remoteVnc.bridgePort` it did not even have to scan for it. An
+      // unauthenticated client now gets a 401 and no upgrade at all, which is
+      // what test/bridgeAuth.test.mjs pins.
+      verifyClient: ({ req }: { req: http.IncomingMessage }) =>
+        tokensMatch(new URL(req.url ?? '/', 'ws://127.0.0.1').searchParams.get('token'), token),
     });
 
     const notifyClosed = (reason?: string) => {
@@ -169,12 +181,13 @@ function createBridgeOn(
       }
     });
 
-    wss.on('connection', (socket, request) => {
-      const requestUrl = new URL(request.url ?? '/', 'ws://127.0.0.1');
-      if (!tokensMatch(requestUrl.searchParams.get('token'), token)) {
-        socket.close(1008, 'Invalid token');
-        return;
-      }
+    wss.on('connection', (socket) => {
+      // No token check here: verifyClient above rejected anything without one
+      // before the handshake completed. Repeating it would be an unreachable
+      // branch, and the property it would guard is pinned where it is actually
+      // observable — test/bridgeAuth.test.mjs asserts an untokened client never
+      // sees a 101.
+      //
       // Only the first client is served; reject any extras.
       if (ws) {
         socket.close(1013, 'Bridge already in use');

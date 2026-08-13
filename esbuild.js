@@ -41,6 +41,10 @@ const wsBanner = `/*! Bundles ws ${depVersion('ws')}
  * Source: https://github.com/websockets/ws
  * Full notices: THIRD-PARTY-NOTICES.md, shipped with this extension.
  */`;
+const gifencBanner = `/*! Bundles gifenc ${depVersion('gifenc')} — (c) 2017 Matt DesLauriers — MIT
+ * Source: https://github.com/mattdesl/gifenc
+ * Full notices: THIRD-PARTY-NOTICES.md, shipped with this extension.
+ */`;
 
 /** Shared problem-matcher friendly logging for watch mode. */
 const watchPlugin = {
@@ -118,10 +122,36 @@ const cropEditorConfig = {
   logLevel: 'info',
 };
 
+/** Mirrored-page bundle (browser context, runs inside a mirrored Web Page tab).
+ *
+ *  Its only Node-free first-party imports are src/captureChord.ts and
+ *  src/recording.ts (Task 7 adds the latter, for the recording vocabulary) —
+ *  the host's CDP modules reach for `Buffer`, which is why none of them are
+ *  reachable from here. Task 7's recording path reuses media/recorder.ts
+ *  unchanged (the same module media/webview.ts's bundle already carries), and
+ *  that module's GIF encoder pulls in gifenc — so, unlike the crop editor,
+ *  this bundle is no longer banner-less; test/bundleAttribution.test.mjs
+ *  builds the real config and fails the moment its package set (or this
+ *  banner) drifts from what is asserted there.
+ *
+ *  No `splitting`, as above: the tab's CSP admits exactly one nonce'd script. */
+const pageMirrorConfig = {
+  entryPoints: ['media/pageMirror.ts'],
+  bundle: true,
+  format: 'esm',
+  platform: 'browser',
+  target: 'es2022',
+  outfile: 'media/pageMirror.js',
+  banner: { js: gifencBanner },
+  sourcemap: !production,
+  minify: production,
+  logLevel: 'info',
+};
+
 /** Every bundle that ships, in build order. Exported so the attribution test
  *  can build these exact configs rather than a copy of them: a copy is the one
  *  thing guaranteed to drift, and drift is what the test exists to catch. */
-const configs = [extensionConfig, webviewConfig, cropEditorConfig];
+const configs = [extensionConfig, webviewConfig, cropEditorConfig, pageMirrorConfig];
 
 async function main() {
   if (watch) {

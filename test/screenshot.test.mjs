@@ -8,7 +8,7 @@ export default async function ({ ok, eq }) {
   // unicode labels kept.
   const at = new Date(2026, 7, 3, 18, 15, 30); // months are 0-based → August
   eq(screenshotFilename('hmi', at), 'hmi-20260803-181530.png', 'plain label');
-  eq(screenshotFilename('панель', at), 'панель-20260803-181530.png', 'unicode label survives');
+  eq(screenshotFilename('café', at), 'café-20260803-181530.png', 'unicode label survives');
   eq(screenshotFilename('a b/c:d', at), 'a-b-c-d-20260803-181530.png', 'separators collapse to dashes');
   eq(screenshotFilename('///', at), 'session-20260803-181530.png', 'empty-after-sanitising falls back');
   ok(!screenshotFilename('..', at).includes('..'), 'dot-dot cannot survive into a name');

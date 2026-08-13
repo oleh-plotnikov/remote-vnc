@@ -2,16 +2,17 @@ import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import * as os from 'os';
 import { createBridge, VncBridge } from './vncBridge';
-import { captureFilename, pngBytesFromDataUrl } from './screenshot';
-import { stagedName } from './screenshotCrop';
-import { openInCropEditor } from './cropEditor';
-import { saveCaptureBytes } from './captureSave';
+import { captureFilename, pngBytesFromDataUrl, expandHome } from './screenshot';
+import { interactiveSaveCapture } from './interactiveCapture';
 import { SessionRegistry, SessionInfo, SessionStatus } from './sessionRegistry';
 import { ReconnectPolicy } from './reconnectPolicy';
 import { describeBridgeClose } from './closeDiagnostics';
 import { brandIconPath } from './brandIcon';
+import type { CaptureChord } from './captureChord';
 import { logger } from './log';
-import { RecordingFormat, RecordingStopReason, recordingBytes, clampFps } from './recording';
+import { RecordingFormat, RecordingStopReason, recordingBytes, clampFps, recordingFilters } from './recording';
+import { registerPanel, unregisterPanel, setFocusedPanel, getFocusedPanel } from './panelRegistry';
+import { releasePostUseCommand } from './useCommandRunner';
 
 export interface RfbOptions {
   viewOnly: boolean;
@@ -25,6 +26,10 @@ export interface RfbOptions {
 export interface ConnectionRequest {
   host: string;
   port: number;
+  /** Sent alongside the password for security types that ask for one (Apple
+   *  ARD/DH, which macOS offers ahead of VNC Auth). Absent for the classic
+   *  password-only servers, which ignore it. */
+  username?: string;
   password?: string;
   label: string;
   /** Required so every caller resolves the per-connection value against the
@@ -44,6 +49,23 @@ export interface ConnectionRequest {
   /** Show only this area of the framebuffer — for servers that advertise a
    *  stride-padded width and render the padding as a dead band. */
   visibleArea?: { width: number; height: number };
+  /**
+   * A claim on the entry's `postUseCommand` (src/useCommands.ts), already taken
+   * by the caller — `connectEntry` in src/extension.ts — BEFORE it ran the
+   * `preUseCommand`.
+   *
+   * Handed over rather than taken here, because a connect has no panel to hang
+   * a claim on until the bridge is up, and the stack the pre-use command starts
+   * exists from the moment it starts. Every path through this method either
+   * adopts the claim (the session's dispose releases it) or releases it on the
+   * spot; the caller's own `finally` covers the paths that never reach here,
+   * which is how a started stack cannot end up with nobody holding it.
+   */
+  useToken?: string;
+  /** Called once, when the created session has adopted `useToken` and is
+   *  therefore the thing that will release it. The caller releases the claim
+   *  itself if this never fires. */
+  onUseTokenAdopted?: () => void;
 }
 
 const VIEW_TYPE = 'remoteVnc.screen';
@@ -157,23 +179,86 @@ export class VncSessionManager {
     });
     this.sessions.set(id, session);
     this.registry.add(id, request.label);
+    // A VNC session's pixels are always ours (noVNC paints them into the
+    // webview's own canvas) — unlike an unmirrored page tab, so `mirrored`
+    // is unconditionally true here. Capture delegates to the session's
+    // control-channel methods, which reuse the same save/validate helpers
+    // the interactive screenshot/record commands use, just without the
+    // dialog and crop-editor branching a script cannot answer.
+    registerPanel({
+      id,
+      name: request.label,
+      kind: 'session',
+      mirrored: true,
+      screenshot: () => session.captureScreenshot(),
+      record: () => session.captureStartRecording(),
+      recordStop: () => session.captureStopRecording(),
+      reload: () => session.reload(),
+      isRecording: () => session.isRecording,
+    });
     this.active = session;
+    // The claim `connectEntry` took before it ran the preUseCommand is adopted
+    // HERE, at the first moment there is a tab whose close can release it —
+    // by token, so a session closing cannot stop a stack another still-open tab
+    // is using. See PostUseTracker (src/useCommands.ts). Every earlier return
+    // above leaves the claim unadopted on purpose: the caller's `finally`
+    // releases it, which runs the stop command for a stack that was started
+    // and then could not be used.
+    const useToken = request.useToken;
+    request.onUseTokenAdopted?.();
+    // A freshly opened tab is the active one before any onDidChangeViewState
+    // fires (that event only reports subsequent changes) — the hotkey chords
+    // must resolve to it immediately, not just after the user alt-tabs away
+    // and back.
+    setFocusedPanel(id);
+    void vscode.commands.executeCommand('setContext', 'remoteVnc.panelFocused', true);
     this.updateRecordingContext();
 
     panel.onDidChangeViewState((e) => {
       if (e.webviewPanel.active) {
         this.active = session;
+        setFocusedPanel(id);
+        void vscode.commands.executeCommand('setContext', 'remoteVnc.panelFocused', true);
+      } else if (getFocusedPanel()?.id === id) {
+        // Only the panel that is actually focused may clear the key — a
+        // background tab going inactive must not blow away the context a
+        // different, now-focused tab just set.
+        setFocusedPanel(undefined);
+        void vscode.commands.executeCommand('setContext', 'remoteVnc.panelFocused', false);
       }
       this.updateRecordingContext();
     });
     panel.onDidDispose(() => {
       this.sessions.delete(id);
       this.registry.remove(id);
+      const wasFocused = getFocusedPanel()?.id === id;
+      unregisterPanel(id);
+      // Closing a tab does not fire onDidChangeViewState first, so the
+      // context key needs its own clear here — otherwise a stale "true"
+      // would hijack the chords in whatever the user looks at next.
+      if (wasFocused) {
+        void vscode.commands.executeCommand('setContext', 'remoteVnc.panelFocused', false);
+      }
       if (this.active === session) {
         this.active = this.sessions.values().next().value;
       }
       this.updateRecordingContext();
+      if (useToken) {
+        releasePostUseCommand(useToken);
+      }
     });
+  }
+
+  /**
+   * Whether a session for this target is already open.
+   *
+   * `connect` already reveals rather than duplicates one, but the pre-use
+   * command runs BEFORE connect is called — it has to, since it is what makes
+   * the target answer — so the caller needs to ask this first. Without it,
+   * clicking an already-open connection would re-run its start command.
+   */
+  hasSessionFor(host: string, port: number): boolean {
+    return this.findByTarget(host, port) !== undefined;
   }
 
   /** Sessions currently open, for the Active Sessions tree view. */
@@ -291,8 +376,11 @@ export class VncSessionManager {
   }
 }
 
-/** A single VNC viewer panel with optional auto-reconnect. */
-class VncSession {
+/** A single VNC viewer panel with optional auto-reconnect. Exported (only)
+ *  so its registry-facing capture/reload methods are directly unit-testable
+ *  without going through VncSessionManager.connect(), which needs a live
+ *  TCP bridge. */
+export class VncSession {
   private readonly disposables: vscode.Disposable[] = [];
   private pendingConnect: ExtensionMessage | undefined;
   private disposed = false;
@@ -302,6 +390,7 @@ class VncSession {
   private readonly host: string;
   private readonly port: number;
   private readonly label: string;
+  private readonly username?: string;
   private readonly password?: string;
   private readonly autoReconnect: boolean;
   private readonly forceRaw: boolean;
@@ -325,6 +414,15 @@ class VncSession {
   private recording: 'idle' | 'starting' | 'recording' = 'idle';
   /** Resolvers waiting for the in-flight recording to flush (graceful close). */
   private recordingWaiters: Array<() => void> = [];
+  /**
+   * Waiters for the panel registry's non-interactive capture calls (control
+   * server, hotkey dispatcher) — one small queue per in-flight request kind.
+   * These bypass the interactive save-dialog/crop-editor branching in
+   * `onMessage`: a script awaiting a promise has no one to answer a dialog.
+   */
+  private screenshotWaiters: Array<{ resolve: (path: string) => void; reject: (err: Error) => void }> = [];
+  private recordStartWaiters: Array<{ resolve: () => void; reject: (err: Error) => void }> = [];
+  private recordStopWaiters: Array<{ resolve: (path: string) => void; reject: (err: Error) => void }> = [];
   private readonly onRecordingChange: () => void;
   private readonly globalStorageUri: vscode.Uri;
 
@@ -332,6 +430,7 @@ class VncSession {
     this.host = init.request.host;
     this.port = init.request.port;
     this.label = init.request.label;
+    this.username = init.request.username;
     this.password = init.request.password;
     this.autoReconnect = init.request.autoReconnect;
     this.forceRaw = init.request.forceRawEncoding ?? false;
@@ -359,6 +458,7 @@ class VncSession {
     this.pendingConnect = {
       type: 'connect',
       url: init.clientUrl,
+      username: this.username,
       password: this.password,
       options: this.options,
       forceRaw: this.forceRaw,
@@ -455,6 +555,7 @@ class VncSession {
     this.pendingConnect = {
       type: 'connect',
       url: established.clientUrl,
+      username: this.username,
       password: this.password,
       options: this.options,
       forceRaw: this.forceRaw,
@@ -473,6 +574,17 @@ class VncSession {
 
   private onMessage(msg: WebviewMessage): void {
     switch (msg.type) {
+      case 'chord':
+        // The chord never reached VS Code's dispatcher — noVNC swallows keys
+        // to forward them to the remote machine — so the webview forwards the
+        // intent instead. Run the same commands the keybindings would, which
+        // keeps one code path for both routes.
+        void vscode.commands.executeCommand(
+          msg.action === 'screenshot'
+            ? 'remoteVnc.screenshotFocused'
+            : 'remoteVnc.recordFocusedToggle'
+        );
+        break;
       case 'ready':
         if (this.pendingConnect) {
           void this.post(this.pendingConnect);
@@ -514,7 +626,15 @@ class VncSession {
         this.onStatus('connected');
         logger().error(`security failure${msg.reason ? ` — ${msg.reason}` : ''} (target ${this.host}:${this.port}).`);
         void vscode.window.showErrorMessage(
-          `Remote VNC: authentication/security failure${msg.reason ? ` — ${msg.reason}` : ''}.`
+          `Remote VNC: authentication/security failure${msg.reason ? ` — ${msg.reason}` : ''}.${
+            // A server that wants a username while the connection has none is
+            // the one case the user cannot act on from the message alone: the
+            // prompt only ever asks for a password, so it reads as a rejected
+            // password no matter how many times it is retyped.
+            msg.needs?.includes('username') && !this.username
+              ? ' This server also wants an account name — set "username" on the saved connection (macOS targets negotiate Apple ARD, which requires one).'
+              : ''
+          }`
         );
         break;
       case 'log':
@@ -524,8 +644,18 @@ class VncSession {
           logger().info(`webview: ${msg.message}`);
         }
         break;
-      case 'screenshot':
-        if (msg.error || !msg.dataUrl) {
+      case 'screenshot': {
+        // A pending control-channel/hotkey request takes the response
+        // instead of the interactive dialog/crop-editor path below — there
+        // is no one to answer a save dialog on a script's behalf.
+        const waiter = this.screenshotWaiters.shift();
+        if (waiter) {
+          if (msg.error || !msg.dataUrl) {
+            waiter.reject(new Error(msg.error ?? 'no image data'));
+          } else {
+            this.saveScreenshotDirect(msg.dataUrl).then(waiter.resolve, waiter.reject);
+          }
+        } else if (msg.error || !msg.dataUrl) {
           void vscode.window.showWarningMessage(
             `Remote VNC (${this.label}): could not capture a screenshot — ${msg.error ?? 'no image data'}.`
           );
@@ -533,7 +663,8 @@ class VncSession {
           void this.saveScreenshot(msg.dataUrl);
         }
         break;
-      case 'record-status':
+      }
+      case 'record-status': {
         if (msg.error) {
           logger().error(`recording (${this.label}): ${msg.error}`);
           void vscode.window.showWarningMessage(
@@ -544,14 +675,42 @@ class VncSession {
         if (this.recording === 'idle') {
           this.flushRecordingWaiters();
         }
+        // This is the ack for a captureStartRecording() call, if one is
+        // pending — recording === true means it took.
+        const startWaiters = this.recordStartWaiters.splice(0);
+        for (const w of startWaiters) {
+          if (msg.recording) {
+            w.resolve();
+          } else {
+            w.reject(new Error(msg.error ?? 'could not start recording'));
+          }
+        }
         this.onRecordingChange();
         break;
-      case 'recording':
+      }
+      case 'recording': {
         this.recording = 'idle';
         this.onRecordingChange();
         this.flushRecordingWaiters();
-        void this.handleRecording(msg);
+        const stopWaiters = this.recordStopWaiters.splice(0);
+        if (stopWaiters.length > 0) {
+          this.saveRecordingDirect(msg).then(
+            (path) => {
+              for (const w of stopWaiters) {
+                w.resolve(path);
+              }
+            },
+            (err: Error) => {
+              for (const w of stopWaiters) {
+                w.reject(err);
+              }
+            }
+          );
+        } else {
+          void this.handleRecording(msg);
+        }
         break;
+      }
     }
   }
 
@@ -585,6 +744,62 @@ class VncSession {
       return;
     }
     void this.post({ type: 'record-stop' });
+  }
+
+  /**
+   * Screenshot for the panel registry (control server / focused hotkey):
+   * unlike `takeScreenshot`, this resolves with the saved path and skips the
+   * crop editor and the open/save choice — a caller here is a script or a
+   * key chord, not someone present to answer a dialog. Shares the webview
+   * round trip with `takeScreenshot`; `onMessage`'s 'screenshot' case
+   * routes the response to whichever waiter (if any) is queued.
+   */
+  captureScreenshot(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      this.screenshotWaiters.push({ resolve, reject });
+      void this.post({ type: 'screenshot' });
+    });
+  }
+
+  /** Registry-driven recording start: resolves once the webview confirms
+   *  recording actually began (or rejects with its reported error). */
+  captureStartRecording(): Promise<void> {
+    if (this.recording !== 'idle') {
+      return Promise.reject(new Error('already recording'));
+    }
+    const config = vscode.workspace.getConfiguration('remoteVnc');
+    const format: RecordingFormat =
+      config.get<string>('recordingFormat', 'webm') === 'gif' ? 'gif' : 'webm';
+    const fps = clampFps(config.get<number>('recordingFrameRate', 10));
+    return new Promise((resolve, reject) => {
+      this.recordStartWaiters.push({ resolve, reject });
+      this.recording = 'starting';
+      this.onRecordingChange();
+      void this.post({ type: 'record-start', format, fps });
+    });
+  }
+
+  /** Registry-driven recording stop: resolves with the saved file's path. */
+  captureStopRecording(): Promise<string> {
+    if (this.recording === 'idle') {
+      return Promise.reject(new Error('no recording in progress'));
+    }
+    return new Promise((resolve, reject) => {
+      this.recordStopWaiters.push({ resolve, reject });
+      void this.post({ type: 'record-stop' });
+    });
+  }
+
+  /**
+   * Registry-driven "reload": always rejects. "Reload" is a page-target
+   * concept (re-render an iframe) — a session is a live, possibly-unattended
+   * connection, so reinterpreting "reload" as "drop and re-establish it"
+   * would let an unauthenticated-looking HTTP call force a destructive
+   * reconnect on a session the caller may not even be watching. Rejecting is
+   * a deliberate decision, not a placeholder.
+   */
+  reload(): Promise<void> {
+    return Promise.reject(new Error('reload applies to page targets only'));
   }
 
   /**
@@ -622,89 +837,61 @@ class VncSession {
       return;
     }
     const name = captureFilename(this.label, new Date(), 'png');
-    const action = vscode.workspace
-      .getConfiguration('remoteVnc')
-      .get<string>('screenshotAction', 'open');
-    const filters = { 'PNG image': ['png'] };
-    if (action === 'open') {
-      await this.openCapture(bytes, name, filters, 'screenshot');
-    } else {
-      await this.saveCapture(bytes, name, filters, 'screenshot');
-    }
-  }
-
-  /** Write a capture where the user keeps files: configured directory
-   *  silently, otherwise a save dialog. Shared by screenshots and
-   *  recordings — the flows differ only in wording and filters. The body sits
-   *  in `./captureSave` because the crop editor's footer Save does the same job
-   *  for the image its tab is holding, and the destination policy is a promise
-   *  `remoteVnc.screenshotDirectory` makes to the user: two copies of it would
-   *  drift the first time either call site grew a case the other did not. */
-  private async saveCapture(
-    bytes: Uint8Array,
-    name: string,
-    filters: Record<string, string[]>,
-    kind: 'screenshot' | 'recording',
-    note = ''
-  ): Promise<void> {
-    await saveCaptureBytes(bytes, name, filters, kind, this.label, note);
-  }
-
-  /** Stage a capture in extension storage (no user folder touched) and
-   *  open it as a tab; a toast offers copying it somewhere permanent. */
-  private async openCapture(
-    bytes: Uint8Array,
-    name: string,
-    filters: Record<string, string[]>,
-    kind: 'screenshot' | 'recording',
-    note = ''
-  ): Promise<void> {
-    const dir = vscode.Uri.joinPath(this.globalStorageUri, 'recordings');
-    let uri: vscode.Uri;
-    let staged: string;
-    try {
-      ({ name: staged, uri } = await claimStagedName(dir, name, bytes));
-    } catch (err) {
-      void vscode.window.showErrorMessage(
-        `Remote VNC (${this.label}): could not stage the ${kind} — ${describeError(err)}.`
-      );
-      return;
-    }
-    // A screenshot lands in the crop editor unless the user has said otherwise;
-    // openInCropEditor answers with a boolean rather than throwing, so a tab
-    // that failed to appear falls back to the built-in preview instead of
-    // leaving the capture staged and invisible. A recording is not an image and
-    // keeps vscode.open.
-    const cropEditor =
-      kind === 'screenshot' &&
-      vscode.workspace.getConfiguration('remoteVnc').get<boolean>('screenshotCropEditor', true);
-    if (!cropEditor || !(await openInCropEditor(uri))) {
-      await vscode.commands.executeCommand('vscode.open', uri);
-    }
-    // The crop tab carries a Save of its own, about the image it is currently
-    // showing; this one is the whole-image escape hatch, so the screenshot
-    // wording says which is which. One const feeds both the button and the
-    // comparison, because two literals that have to match eventually will not.
-    const saveLabel = kind === 'screenshot' ? 'Save Full Image As…' : 'Save As…';
-    const choice = await vscode.window.showInformationMessage(
-      `Remote VNC: ${kind} opened, not saved${note}.`,
-      saveLabel
+    await interactiveSaveCapture(
+      this.globalStorageUri,
+      this.label,
+      bytes,
+      name,
+      { 'PNG image': ['png'] },
+      'screenshot'
     );
-    if (choice === saveLabel) {
-      const target = await vscode.window.showSaveDialog({
-        defaultUri: vscode.Uri.file(`${os.homedir()}/${staged}`),
-        filters,
-      });
-      if (target) {
-        try {
-          await vscode.workspace.fs.copy(uri, target, { overwrite: true });
-        } catch (err) {
-          void vscode.window.showErrorMessage(
-            `Remote VNC (${this.label}): could not save the ${kind} — ${describeError(err)}.`
-          );
-        }
-      }
+  }
+
+  /**
+   * The registry's screenshot path: writes straight to
+   * `remoteVnc.screenshotDirectory` when set, or under this window's own
+   * extension storage otherwise — **never** a save dialog, and never the
+   * crop editor or "open" branch. `remoteVnc.screenshotAction`/
+   * `screenshotCropEditor` govern only the interactive command. This is the
+   * path a later task calls from an HTTP handler: a dialog on a window the
+   * caller cannot see would hang that request forever with no one able to
+   * dismiss it, so unlike the interactive `saveCapture`, this never falls
+   * back to `showSaveDialog`.
+   */
+  private async saveScreenshotDirect(dataUrl: string): Promise<string> {
+    const bytes = pngBytesFromDataUrl(dataUrl);
+    if (!bytes) {
+      throw new Error('the webview returned no usable PNG data');
     }
+    const name = captureFilename(this.label, new Date(), 'png');
+    return this.saveCaptureDirect(bytes, name, 'screenshot');
+  }
+
+  /**
+   * The no-dialog counterpart of `saveCapture`, for the registry's
+   * screenshot/recordStop only — see `saveScreenshotDirect`. Honours
+   * `remoteVnc.screenshotDirectory` when set (same expansion as the
+   * interactive path); otherwise writes under
+   * `<globalStorage>/captures`, a destination that always exists and needs
+   * no one to answer a prompt.
+   */
+  private async saveCaptureDirect(
+    bytes: Uint8Array,
+    name: string,
+    kind: 'screenshot' | 'recording'
+  ): Promise<string> {
+    const configured = vscode.workspace
+      .getConfiguration('remoteVnc')
+      .get<string>('screenshotDirectory', '')
+      .trim();
+    const dir = configured
+      ? vscode.Uri.file(expandHome(configured, os.homedir()))
+      : vscode.Uri.joinPath(this.globalStorageUri, 'captures');
+    await vscode.workspace.fs.createDirectory(dir);
+    const uri = vscode.Uri.joinPath(dir, name);
+    await vscode.workspace.fs.writeFile(uri, bytes);
+    logger().info(`${kind} saved (${this.label}, registry) -> ${uri.fsPath}`);
+    return uri.fsPath;
   }
 
   private flushRecordingWaiters(): void {
@@ -737,14 +924,29 @@ class VncSession {
       `recording finished (${this.label}) — ${format}, ${Math.round(msg.durationMs / 1000)}s, reason ${msg.reason}`
     );
     const name = captureFilename(this.label, new Date(), format);
-    const action = vscode.workspace
-      .getConfiguration('remoteVnc')
-      .get<string>('recordingAction', 'open');
-    if (action === 'open') {
-      await this.openCapture(bytes, name, recordingFilters(format), 'recording', note);
-    } else {
-      await this.saveCapture(bytes, name, recordingFilters(format), 'recording', note);
+    await interactiveSaveCapture(
+      this.globalStorageUri,
+      this.label,
+      bytes,
+      name,
+      recordingFilters(format),
+      'recording',
+      note
+    );
+  }
+
+  /** The registry's record-stop path: the mirror of `saveScreenshotDirect`
+   *  for a finished recording — validate, then save with `saveCaptureDirect`
+   *  (never a dialog) and resolve with the path. `remoteVnc.recordingAction`
+   *  governs only the interactive command. */
+  private async saveRecordingDirect(msg: Extract<WebviewMessage, { type: 'recording' }>): Promise<string> {
+    const format: RecordingFormat = msg.format === 'gif' ? 'gif' : 'webm';
+    const bytes = recordingBytes(format, msg.data);
+    if (!bytes) {
+      throw new Error(`the webview returned no usable ${format} data`);
     }
+    const name = captureFilename(this.label, new Date(), format);
+    return this.saveCaptureDirect(bytes, name, 'recording');
   }
 
   private post(message: ExtensionMessage): Thenable<boolean> {
@@ -767,11 +969,27 @@ class VncSession {
     this.disposed = true;
     this.clearReconnectTimer();
     this.flushRecordingWaiters();
+    this.rejectPendingCaptures();
     this.bridge.dispose();
     for (const d of this.disposables.splice(0)) {
       d.dispose();
     }
     this.panel.dispose();
+  }
+
+  /** A session closing must not leave a registry caller's promise pending
+   *  forever — the webview that would have answered it is gone. */
+  private rejectPendingCaptures(): void {
+    const err = new Error('session closed');
+    for (const w of this.screenshotWaiters.splice(0)) {
+      w.reject(err);
+    }
+    for (const w of this.recordStartWaiters.splice(0)) {
+      w.reject(err);
+    }
+    for (const w of this.recordStopWaiters.splice(0)) {
+      w.reject(err);
+    }
   }
 }
 
@@ -779,6 +997,7 @@ type ExtensionMessage =
   | {
       type: 'connect';
       url: string;
+      username?: string;
       password?: string;
       options: RfbOptions;
       forceRaw?: boolean;
@@ -795,10 +1014,11 @@ type WebviewMessage =
   | { type: 'ready' }
   | { type: 'status'; state: 'connecting' | 'connected' | 'disconnected'; clean?: boolean; width?: number; height?: number }
   | { type: 'desktopname'; name: string }
-  | { type: 'securityfailure'; reason?: string }
+  | { type: 'securityfailure'; reason?: string; needs?: string[] }
   | { type: 'log'; level: 'info' | 'error'; message: string }
   | { type: 'screenshot'; dataUrl?: string; error?: string }
   | { type: 'record-status'; recording: boolean; error?: string }
+  | { type: 'chord'; action: CaptureChord }
   | {
       type: 'recording';
       format: RecordingFormat;
@@ -845,54 +1065,8 @@ function renderHtml(webview: vscode.Webview, extensionUri: vscode.Uri, bridgeUrl
 </html>`;
 }
 
-/**
- * Serialises staging so that picking a free name and writing it are one step.
- *
- * Capture names carry a second-resolution timestamp (`captureFilename` in
- * src/screenshot.ts), so two captures of one connection inside the same second
- * ask for the same file — and a held-down screenshot keybinding does exactly
- * that, because `takeScreenshot` is fire-and-forget. Writing the same name
- * twice would replace the image an open crop tab is showing, and that tab's
- * next Crop would put its older pixels back over the newer capture. Choosing a
- * free name is not enough on its own: two concurrent calls both finish reading
- * the directory before either writes, so both are handed the same free name.
- *
- * The queue is module-level, not per-session: one staging directory serves
- * every session, and two sessions of the same target share a label and
- * therefore a capture name. Two VS Code windows sharing global storage stay
- * outside it by nature — that residue is what the byte comparison in the crop
- * editor's `stillOurs` exists to catch.
- */
-let stageQueue: Promise<unknown> = Promise.resolve();
-
-async function claimStagedName(
-  dir: vscode.Uri,
-  name: string,
-  bytes: Uint8Array
-): Promise<{ name: string; uri: vscode.Uri }> {
-  const claim = stageQueue.catch(() => undefined).then(async () => {
-    await vscode.workspace.fs.createDirectory(dir);
-    const listing = await vscode.workspace.fs.readDirectory(dir);
-    const picked = stagedName(
-      name,
-      listing.map(([entry]) => entry)
-    );
-    const uri = vscode.Uri.joinPath(dir, picked);
-    await vscode.workspace.fs.writeFile(uri, bytes);
-    return { name: picked, uri };
-  });
-  // A failed stage must not poison the queue for the next capture.
-  stageQueue = claim.catch(() => undefined);
-  return claim;
-}
-
 function describeError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-/** Save-dialog filter for a recording format. */
-function recordingFilters(format: RecordingFormat): Record<string, string[]> {
-  return format === 'gif' ? { 'GIF image': ['gif'] } : { 'WebM video': ['webm'] };
 }
 
 function isAddrInUse(err: unknown): boolean {

@@ -40,3 +40,9 @@ export function clampFps(value: number): number {
   }
   return Math.min(30, Math.max(1, Math.round(value)));
 }
+
+/** Save-dialog filter for a recording format. Shared by every interactive
+ *  recording save — a VNC session's and a mirrored page's alike. */
+export function recordingFilters(format: RecordingFormat): Record<string, string[]> {
+  return format === 'gif' ? { 'GIF image': ['gif'] } : { 'WebM video': ['webm'] };
+}

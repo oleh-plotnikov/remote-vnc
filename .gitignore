@@ -4,6 +4,8 @@ media/webview.js
 media/webview.js.map
 media/cropEditor.js
 media/cropEditor.js.map
+media/pageMirror.js
+media/pageMirror.js.map
 *.vsix
 .DS_Store
 

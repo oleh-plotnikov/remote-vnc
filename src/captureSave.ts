@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as os from 'os';
 import { expandHome } from './screenshot';
 import { logger } from './log';
+import { trustedConfig } from './trustedSetting';
 
 /**
  * Writing a capture out to where the user keeps files.
@@ -33,10 +34,11 @@ export async function saveCaptureBytes(
   label: string,
   note = ''
 ): Promise<vscode.Uri | undefined> {
-  const configured = vscode.workspace
-    .getConfiguration('remoteVnc')
-    .get<string>('screenshotDirectory', '')
-    .trim();
+  // trustedConfig, not get(): this setting names where screen content is
+  // written, and combined with `screenshotAction: 'save'` it removes the dialog
+  // that would otherwise show the user where. A workspace that is not trusted
+  // does not get to make that pair of decisions — see src/trustedSetting.ts.
+  const configured = trustedConfig<string>('remoteVnc', 'screenshotDirectory', '').trim();
   let uri: vscode.Uri | undefined;
   if (configured) {
     const dir = vscode.Uri.file(expandHome(configured, os.homedir()));

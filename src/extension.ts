@@ -8,6 +8,7 @@ import {
   collectConnections,
   effectiveAutoReconnect,
   secretKeyFor,
+  secretMigration,
   baseFor,
   applyConnectionEdit,
   toConnectionEntry,
@@ -15,15 +16,43 @@ import {
 import { parseVisibleArea } from './cropLayout';
 import { ConnectionsTreeProvider, ConnectionTreeItem } from './connectionsView';
 import { SessionsTreeProvider, SessionTreeItem } from './sessionsView';
-import { SavedPage, PageEntry, collectPages, basePagesFor, isValidPageUrl } from './pages';
+import { SavedPage, PageEntry, applyPageEdit, collectPages, basePagesFor, isValidPageUrl } from './pages';
 import { PagesTreeProvider, PageTreeItem } from './pagesView';
-import { openPagePanel } from './pagePanel';
+import {
+  disposePageMirrors,
+  openPagePanel,
+  pageId,
+  restartMirrorPage,
+  takePageScreenshot,
+  toggleRecordPage,
+} from './pagePanel';
 import { registerCropEditor, cropActiveImage } from './cropEditor';
+import { startControlServer } from './controlServer';
+import { getFocusedPanel, getPanel } from './panelRegistry';
 import { logger, disposeLogger } from './log';
+import {
+  drainPostUseCommands,
+  holdPostUseCommand,
+  releasePostUseCommand,
+  runPreUseCommand,
+} from './useCommandRunner';
+import { useCommandsFor } from './useCommands';
 
 const PLAINTEXT_WARNING_KEY = 'remoteVnc.plaintextWarningDismissed';
 
 let manager: VncSessionManager;
+
+/** The running control server's stop function, or undefined while it is off. */
+let controlServerStop: (() => void) | undefined;
+/**
+ * Serialises start/stop against each other. `onDidChangeConfiguration` can
+ * fire again before a prior `startControlServer` await resolves (the setting
+ * flipped on and back off within one tick); chaining onto this instead of
+ * dispatching `syncControlServer` directly keeps that pair in order, so the
+ * "off" run always sees the stop function the "on" run produced rather than
+ * racing it and leaving a server listening with the setting reading false.
+ */
+let controlServerTask: Promise<void> = Promise.resolve();
 
 export function activate(context: vscode.ExtensionContext): void {
   // Create the log channel eagerly so it appears in the Output dropdown, and
@@ -33,7 +62,21 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(manager);
   // The when-clause key must exist before the first panel gains focus.
   void vscode.commands.executeCommand('setContext', 'remoteVnc.recordingActive', false);
+  // Same reasoning for the hotkey chords' gate: without an explicit false
+  // here, the key is merely unset (not "false") until a panel first reports
+  // itself active, and an unset key's when-clause behaviour is not something
+  // to rely on for "the chords must never fire in a source file".
+  void vscode.commands.executeCommand('setContext', 'remoteVnc.panelFocused', false);
   void sweepOldRecordings(context);
+
+  scheduleControlServerSync(context);
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('remoteVnc.controlServer.enabled')) {
+        scheduleControlServerSync(context);
+      }
+    })
+  );
 
   const connectionsProvider = new ConnectionsTreeProvider();
   const sessionsProvider = new SessionsTreeProvider(manager);
@@ -65,17 +108,29 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('remoteVnc.cropImage', () => cropActiveImage()),
     vscode.commands.registerCommand('remoteVnc.recordStart', () => manager.recordActive()),
     vscode.commands.registerCommand('remoteVnc.recordStop', () => manager.stopRecordingActive()),
+    // The keyboard chords: unlike the pair above (which acts on the tracked
+    // "active session"), these dispatch through the panel registry, so one
+    // chord reaches whichever panel — page or VNC session — last reported
+    // itself focused (see panelRegistry.setFocusedPanel and the
+    // onDidChangeViewState wiring in pagePanel.ts/vncPanel.ts).
+    vscode.commands.registerCommand('remoteVnc.screenshotFocused', () => screenshotFocused()),
+    vscode.commands.registerCommand('remoteVnc.recordFocusedToggle', () => recordFocusedToggle()),
     // Tree-only commands: hidden from the Command Palette via the
     // `commandPalette` menu gate, and guarded here in case they are invoked
     // without a tree item.
     vscode.commands.registerCommand('remoteVnc.connectConnection', (item?: ConnectionTreeItem) => {
       if (item) {
-        void connectEntry(context, item.entry);
+        // The commands come from THIS window's trust-gated read, looked up by
+        // name — never off the item. See trustedUse below.
+        void connectEntry(context, {
+          ...item.entry,
+          use: useCommandsFor(getSavedConnections(), item.entry.name),
+        });
       }
     }),
     vscode.commands.registerCommand('remoteVnc.editConnection', (item?: ConnectionTreeItem) => {
       if (item) {
-        void editConnection(item.entry);
+        void editConnection(context, item.entry);
       }
     }),
     vscode.commands.registerCommand('remoteVnc.deleteConnection', (item?: ConnectionTreeItem) => {
@@ -139,7 +194,20 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('remoteVnc.addPage', () => addPage()),
     vscode.commands.registerCommand('remoteVnc.openPageItem', (item?: PageTreeItem) => {
       if (item) {
-        void openPagePanel(context.extensionUri, item.entry.name, item.entry.url, canvasOf(item.entry));
+        void openPagePanel(
+          context,
+          item.entry.name,
+          item.entry.url,
+          canvasOf(item.entry),
+          item.entry.mirror,
+          // SECURITY. `registerCommand` is a public surface — another extension
+          // or a keybinding's `args` can invoke this with an item of its own
+          // making, and that item's `use` never passed collectPages' Workspace
+          // Trust gate. So the commands acted on are looked up by name in the
+          // entries this window resolved; an unknown name runs nothing. The URL
+          // is left as passed: a forged one opens a webview, not a shell.
+          useCommandsFor(getSavedPages(), item.entry.name)
+        );
       }
     }),
     vscode.commands.registerCommand('remoteVnc.editPage', (item?: PageTreeItem) => {
@@ -151,13 +219,255 @@ export function activate(context: vscode.ExtensionContext): void {
       if (item) {
         void deletePage(item.entry);
       }
-    })
+    }),
+    // A mirrored page's capture, from the tree row rather than the focused-
+    // panel hotkeys — mirrors screenshotConnection/recordConnection: guarded
+    // here (the tab may not be open, or may not be mirrored) rather than
+    // inside the panel registry, which has no name to word the guard with.
+    vscode.commands.registerCommand('remoteVnc.screenshotPage', (item?: PageTreeItem) => {
+      if (item) {
+        void screenshotPage(item.entry);
+      }
+    }),
+    vscode.commands.registerCommand('remoteVnc.recordPage', (item?: PageTreeItem) => {
+      if (item) {
+        void recordTogglePage(item.entry);
+      }
+    }),
+    // The only command here that is BOTH a tree row and a palette entry, and
+    // deliberately so: it is the recovery for a mirrored tab that has stopped
+    // responding to input, and a user in that state is looking at the stuck
+    // tab, not at the sidebar. VS Code passes a PageTreeItem from the menu and
+    // nothing from the palette, so the argument's absence is what selects the
+    // focused panel instead.
+    vscode.commands.registerCommand('remoteVnc.restartMirror', (item?: PageTreeItem) =>
+      restartMirror(item?.entry)
+    )
   );
 }
 
-export function deactivate(): void {
+export async function deactivate(): Promise<void> {
   manager?.dispose();
+  // Whatever is still held after the sessions have gone: page tabs do not
+  // reliably get their onDidDispose on window close, and a stack left running
+  // because the window shut down is exactly the all-day CPU cost these
+  // commands exist to remove. Detached and not awaited — see
+  // drainPostUseCommands.
+  drainPostUseCommands();
+  // The mirrored pages' Chrome is a child of this process but not tied to its
+  // lifetime — left alone it stays resident with nothing to talk to. Started
+  // here but awaited at the end, so it settles alongside the control server's
+  // own shutdown rather than after it: deactivate runs under VS Code's
+  // shutdown timeout, and these two have nothing to do with each other.
+  // Settled at creation, not just awaited later: if `await controlServerTask`
+  // below rejects, the `await mirrorsStopped` after it never runs, and a
+  // throwing `handle.kill()`/`cdp.dispose()` inside this promise would
+  // otherwise surface as an unhandled rejection instead of the ordinary
+  // shutdown-error path.
+  const mirrorsStopped = disposePageMirrors().catch((err) => {
+    logger().warn(`mirror teardown failed during deactivate: ${describeError(err)}`);
+  });
+  // A start scheduled just before shutdown may still be in flight, in which
+  // case `controlServerStop` is not set yet — awaiting the chain lets it
+  // settle first, so the listener this deactivation is meant to close is
+  // actually there to close instead of leaking for the rest of the process's
+  // life. VS Code awaits a thenable `deactivate` (with its own timeout), which
+  // is what makes waiting here worthwhile rather than merely aspirational.
+  await controlServerTask;
+  controlServerStop?.();
+  controlServerStop = undefined;
+  // Awaited, not fire-and-forget: a launch still in flight is killed only once
+  // it resolves, and a kill scheduled after this function returns never runs.
+  await mirrorsStopped;
   disposeLogger();
+}
+
+/** Queue a start/stop pass so overlapping config-change events settle in order. */
+function scheduleControlServerSync(context: vscode.ExtensionContext): void {
+  controlServerTask = controlServerTask.then(() => syncControlServer(context));
+}
+
+/** Start or stop the loopback control server to match `remoteVnc.controlServer.enabled`. */
+async function syncControlServer(context: vscode.ExtensionContext): Promise<void> {
+  const enabled = vscode.workspace
+    .getConfiguration('remoteVnc')
+    .get<boolean>('controlServer.enabled', false);
+  if (enabled === Boolean(controlServerStop)) {
+    return; // already in the state the setting asks for
+  }
+  if (enabled) {
+    try {
+      controlServerStop = await startControlServer(context);
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `Remote VNC: could not start the control server — ${describeError(err)}.`
+      );
+    }
+  } else {
+    controlServerStop?.();
+    controlServerStop = undefined;
+  }
+}
+
+/**
+ * Screenshot the panel the keyboard chord means: whichever one last reported
+ * itself focused, page or session, without the caller having to know which.
+ *
+ * A chord is a human pressing a key, so a session is captured through the very
+ * same call `remoteVnc.screenshotSession` makes — same `screenshotAction`, same
+ * `screenshotCropEditor`, same toast. The registry's `screenshot()` is the
+ * *programmatic* path: it deliberately answers no dialogs and returns a path,
+ * because the control server's HTTP caller cannot dismiss a modal on a window
+ * it cannot see. Pointing a keyboard at that path is what made this chord look
+ * broken — it wrote a PNG into global storage and said nothing.
+ *
+ * A mirrored page tab gets the exact same treatment: `takePageScreenshot`
+ * (src/pagePanel.ts) is the page's own interactive path — it reads
+ * `remoteVnc.screenshotAction`/`screenshotCropEditor` and ends in the crop
+ * editor or a save dialog, never the registry's `screenshot()`. Routing a
+ * chord into that registry method a second time — after it was fixed once
+ * already, for the VNC case above — is the exact defect this branch exists to
+ * not repeat.
+ *
+ * A page that is not mirrored has no pixels of its own to capture at all; it
+ * still goes through the registry purely to reject with its readable reason
+ * ('page is not mirrored'), surfaced here rather than left to become an
+ * unhandled rejection.
+ */
+async function screenshotFocused(): Promise<void> {
+  const panel = getFocusedPanel();
+  if (!panel) {
+    void vscode.window.showInformationMessage('Remote VNC: no panel is focused.');
+    return;
+  }
+  if (panel.kind === 'session') {
+    manager.screenshotSession(panel.id);
+    return;
+  }
+  if (panel.mirrored) {
+    await takePageScreenshot(panel.id);
+    return;
+  }
+  try {
+    await panel.screenshot();
+  } catch (err) {
+    void vscode.window.showErrorMessage(
+      `Remote VNC: could not take a screenshot — ${describeError(err)}.`
+    );
+  }
+}
+
+/**
+ * One chord, not a start/stop pair — awkward on a keyboard — so it reads the
+ * focused panel's own state and picks the call that makes sense. Same
+ * interactive-path reasoning as `screenshotFocused`: a session's two branches
+ * are the calls `remoteVnc.recordSession` and `remoteVnc.stopRecordSession`
+ * make, so the chord honours `recordingAction` and reports itself exactly as
+ * the tree buttons do.
+ */
+async function recordFocusedToggle(): Promise<void> {
+  const panel = getFocusedPanel();
+  if (!panel) {
+    void vscode.window.showInformationMessage('Remote VNC: no panel is focused.');
+    return;
+  }
+  const wasRecording = panel.isRecording();
+  if (panel.kind === 'session') {
+    if (wasRecording) {
+      manager.stopRecordingSession(panel.id);
+    } else {
+      manager.recordSession(panel.id);
+    }
+    return;
+  }
+  if (panel.mirrored) {
+    // toggleRecordPage (src/pagePanel.ts) is the page's own interactive
+    // toggle — it never touches the registry's record()/recordStop() either,
+    // for the same reason the screenshot branch above does not.
+    toggleRecordPage(panel.id);
+    return;
+  }
+  try {
+    if (wasRecording) {
+      await panel.recordStop();
+    } else {
+      await panel.record();
+    }
+  } catch (err) {
+    void vscode.window.showErrorMessage(
+      `Remote VNC: could not ${wasRecording ? 'stop' : 'start'} recording — ${describeError(err)}.`
+    );
+  }
+}
+
+/**
+ * Screenshot a saved page from its Web Pages tree row — the tree-item
+ * counterpart of `remoteVnc.screenshotConnection`, which goes through
+ * `manager.screenshotTarget` to `session.takeScreenshot()`, the INTERACTIVE
+ * path, not the registry. This row gets the same treatment:
+ * `getPanel`/`pageId` resolve a live registry entry from the saved URL alone
+ * (without going through the `openPagePanel` module's own `OpenPage`
+ * bookkeeping) purely to word the "not open"/"not mirrored" guard a human
+ * clicking a row needs, and `takePageScreenshot` — never `panel.screenshot()`
+ * — is what actually runs the capture, honouring
+ * `remoteVnc.screenshotAction`/`screenshotCropEditor` exactly as the
+ * connection row's screenshot does.
+ */
+async function screenshotPage(entry: PageEntry): Promise<void> {
+  const id = pageId(entry.url);
+  const panel = getPanel(id);
+  if (!panel?.mirrored) {
+    void vscode.window.showInformationMessage(
+      `Remote VNC: "${entry.name}" is not open as a mirrored page — open it first.`
+    );
+    return;
+  }
+  await takePageScreenshot(id);
+}
+
+/**
+ * Start or stop recording a saved page from its tree row — the counterpart of
+ * `remoteVnc.recordConnection`, and the same one-button toggle reasoning as
+ * `recordFocusedToggle`: awkward to ask "start or stop?" on a single row, so
+ * the current state picks the call. `toggleRecordPage` is the page's own
+ * interactive toggle (src/pagePanel.ts) — see `screenshotPage` above for why
+ * this row must not call the registry's `record()`/`recordStop()` instead.
+ */
+async function recordTogglePage(entry: PageEntry): Promise<void> {
+  const id = pageId(entry.url);
+  const panel = getPanel(id);
+  if (!panel?.mirrored) {
+    void vscode.window.showInformationMessage(
+      `Remote VNC: "${entry.name}" is not open as a mirrored page — open it first.`
+    );
+    return;
+  }
+  toggleRecordPage(id);
+}
+
+/**
+ * Restart a mirrored page's surface — the documented way out of a mirror that
+ * has stopped responding, without closing the tab and losing the page state
+ * in it (see `recoverMirror` in src/pagePanel.ts for what a restart keeps).
+ *
+ * Two entry points, one function: a Web Pages tree row names its page, and
+ * the palette names nothing, so the focused panel stands in. Both end in
+ * `restartMirrorPage`, whose boolean is the only way to tell "restarted" from
+ * "there was nothing there" — a command that silently does nothing is exactly
+ * the failure this whole path exists to remove.
+ */
+function restartMirror(entry?: PageEntry): void {
+  const id = entry ? pageId(entry.url) : getFocusedPanel()?.id;
+  const what = entry ? `"${entry.name}"` : 'this tab';
+  if (!id) {
+    void vscode.window.showInformationMessage('Remote VNC: no panel is focused.');
+    return;
+  }
+  if (!restartMirrorPage(id)) {
+    void vscode.window.showInformationMessage(
+      `Remote VNC: ${what} is not open as a mirrored page, so there is no mirror to restart.`
+    );
+  }
 }
 
 /**
@@ -243,43 +553,98 @@ async function connectSaved(context: vscode.ExtensionContext): Promise<void> {
 
 /** Resolve the password (stored, or prompted-and-stored) and open the session. */
 async function connectEntry(context: vscode.ExtensionContext, entry: ConnectionEntry): Promise<void> {
-  const secretKey = secretKeyFor(entry);
-  let password: string | undefined;
+  // The pre-use command has to run before the bridge is opened, because it is
+  // what makes the server answer at all — a bridge dialled first would just
+  // fail with ECONNREFUSED. There is no panel to put the "running…" state in
+  // yet (manager.connect creates one only once the bridge is up), so it goes
+  // in a progress notification instead; on failure nothing is opened, which
+  // is the state the user can act on here.
+  //
+  // Skipped when a session for this target is already open, for the same
+  // reason a page reopen does not re-run it: connect would only reveal that
+  // session, and re-running a start command under a live one is at best waste.
+  const alreadyOpen = manager.hasSessionFor(entry.host, entry.port ?? DEFAULT_PORT);
+  // The claim on the postUseCommand is taken HERE, before the pre-use command
+  // runs, for the same reason the page path takes it before its own: a start
+  // command that fails halfway has still started something, and the stop
+  // command is what cleans that up. A connect has no panel to hang the claim on
+  // yet, so it is carried down to the session (`useToken`/`onUseTokenAdopted`)
+  // and given back by the `finally` below on EVERY path that never produces a
+  // tab — a failed pre-use, a dismissed password prompt, a dismissed cleartext
+  // warning, a bridge that will not open, a throw. Without that, a connect the
+  // user backed out of would leave the stack it just started up with nobody
+  // holding it: no tab to close, so no way to ever run the stop command — the
+  // exact all-day cost this feature exists to remove. Skipped when a session
+  // for this target is already open, because that session holds the claim
+  // already.
+  const useToken = alreadyOpen ? undefined : holdPostUseCommand(entry.name, entry.use);
+  let adopted = false;
   try {
-    password = await context.secrets.get(secretKey);
-  } catch {
-    password = undefined; // keychain locked/unavailable — fall through to prompt
-  }
-  if (password === undefined) {
-    const entered = await promptPassword(
-      'Password (leave empty if the server has no authentication — it will be stored securely)'
-    );
-    if (entered === undefined) {
-      return;
-    }
-    password = entered;
-    // Store even an empty password so we can tell "no auth needed" from
-    // "not entered yet" and avoid re-prompting on every connect.
-    try {
-      await context.secrets.store(secretKey, password);
-    } catch (err) {
-      void vscode.window.showWarningMessage(
-        `Remote VNC: could not save the password — ${describeError(err)}. Using it for this session only.`
+    if (entry.use?.preUseCommand && !alreadyOpen) {
+      const result = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `Remote VNC: running ${entry.name}’s preUseCommand…`,
+          cancellable: false,
+        },
+        () => runPreUseCommand(entry.name, entry.use)
       );
+      if (!result.ok) {
+        void vscode.window.showErrorMessage(result.message);
+        return;
+      }
+    }
+
+    const secretKey = secretKeyFor(entry);
+    let password: string | undefined;
+    try {
+      password = await context.secrets.get(secretKey);
+    } catch {
+      password = undefined; // keychain locked/unavailable — fall through to prompt
+    }
+    if (password === undefined) {
+      const entered = await promptPassword(
+        'Password (leave empty if the server has no authentication — it will be stored securely)'
+      );
+      if (entered === undefined) {
+        return;
+      }
+      password = entered;
+      // Store even an empty password so we can tell "no auth needed" from
+      // "not entered yet" and avoid re-prompting on every connect.
+      try {
+        await context.secrets.store(secretKey, password);
+      } catch (err) {
+        void vscode.window.showWarningMessage(
+          `Remote VNC: could not save the password — ${describeError(err)}. Using it for this session only.`
+        );
+      }
+    }
+
+    await doConnect(context, {
+      host: entry.host,
+      port: entry.port ?? DEFAULT_PORT,
+      username: entry.username || undefined,
+      password: password || undefined,
+      label: entry.name,
+      autoReconnect: entry.autoReconnect,
+      forceRawEncoding: entry.forceRawEncoding,
+      parkServerCursor: entry.parkServerCursor,
+      scaleViewport: entry.scaleViewport,
+      visibleArea: parseVisibleArea(entry.visibleArea),
+      // The claim, never the commands: the pre half already ran above, and the
+      // post half is now a thing a session either takes over or this function
+      // gives back.
+      useToken,
+      onUseTokenAdopted: () => {
+        adopted = true;
+      },
+    });
+  } finally {
+    if (useToken && !adopted) {
+      releasePostUseCommand(useToken);
     }
   }
-
-  await doConnect(context, {
-    host: entry.host,
-    port: entry.port ?? DEFAULT_PORT,
-    password: password || undefined,
-    label: entry.name,
-    autoReconnect: entry.autoReconnect,
-    forceRawEncoding: entry.forceRawEncoding,
-    parkServerCursor: entry.parkServerCursor,
-    scaleViewport: entry.scaleViewport,
-    visibleArea: parseVisibleArea(entry.visibleArea),
-  });
 }
 
 async function addConnection(): Promise<void> {
@@ -413,6 +778,7 @@ async function addConnection(): Promise<void> {
 type ConnectionField =
   | 'name'
   | 'address'
+  | 'username'
   | 'autoReconnect'
   | 'forceRawEncoding'
   | 'parkServerCursor'
@@ -447,7 +813,10 @@ function describeScale(value: boolean | undefined, fallback: boolean): string {
  * raw absent value would invite the user to confirm it, writing an explicit
  * false that silences a global default they may later change.
  */
-async function editConnection(entry: ConnectionEntry): Promise<void> {
+async function editConnection(
+  context: vscode.ExtensionContext,
+  entry: ConnectionEntry
+): Promise<void> {
   let current: ConnectionEntry = entry;
   for (;;) {
     const items: Array<vscode.QuickPickItem & { id?: ConnectionField }> = [
@@ -456,6 +825,11 @@ async function editConnection(entry: ConnectionEntry): Promise<void> {
         id: 'address',
         label: '$(server) Address',
         description: `${current.host}:${current.port ?? DEFAULT_PORT}`,
+      },
+      {
+        id: 'username',
+        label: '$(account) Username',
+        description: current.username || 'None',
       },
       {
         id: 'autoReconnect',
@@ -504,20 +878,45 @@ async function editConnection(entry: ConnectionEntry): Promise<void> {
     }
 
     const previousName = current.name;
+    // The stored record, not `current`: a ConnectionEntry carries the
+    // trust-RESOLVED commands rather than the raw ones, so merging onto it in
+    // an untrusted workspace would write the stripped result back and erase
+    // commands that were only meant to be ignored for this window.
+    const before = storedConnection(current.scope, previousName) ?? current;
+    const after = applyConnectionEdit(before, patch);
     // Writing per change turns one failure point into one per change, and a
     // menu that simply vanished would look like it had saved. Read-only
     // settings and an unwritable .vscode/settings.json both land here.
     try {
-      await saveConnection(
-        current.scope,
-        applyConnectionEdit(current, patch),
-        previousName
-      );
+      await saveConnection(current.scope, after, previousName);
     } catch (err) {
       void vscode.window.showErrorMessage(
         `Remote VNC: could not save "${previousName}" — ${describeError(err)}.`
       );
       return;
+    }
+
+    // The password is keyed by name AND host:port, so an edit to any of the
+    // three renames the key out from under it. Left behind, it is unreachable
+    // for good: the connection asks under the new key, "Forget Password"
+    // computes the new key too, and deleting the entry deletes the new key —
+    // while the real password stays in the OS keyring with no UI able to touch
+    // it. Store before delete, so a failure between the two leaves a duplicate
+    // rather than nothing.
+    const move = secretMigration(before, after);
+    if (move) {
+      try {
+        const stored = await context.secrets.get(move.from);
+        if (stored !== undefined) {
+          await context.secrets.store(move.to, stored);
+          await context.secrets.delete(move.from);
+        }
+      } catch (err) {
+        // Not fatal: the entry itself saved, and the user can retype the
+        // password. Silence would mean a connection that mysteriously stopped
+        // remembering it.
+        logger().warn(`could not move the stored password for "${previousName}" — ${describeError(err)}`);
+      }
     }
 
     // Settings writes are asynchronous; re-reading is what keeps the menu
@@ -561,6 +960,22 @@ async function promptConnectionField(
       });
       const parsed = address ? parseAddress(address) : undefined;
       return parsed ? { host: parsed.host, port: parsed.port } : undefined;
+    }
+    case 'username': {
+      // Empty clears the field: a server that stops asking for an account name
+      // must be reachable again without deleting and recreating the entry.
+      const username = await vscode.window.showInputBox({
+        title: 'Username',
+        prompt:
+          'Account name, for servers whose security type asks for one (macOS negotiates Apple ARD). Leave empty for classic password-only servers.',
+        value: current.username ?? '',
+        ignoreFocusOut: true,
+      });
+      if (username === undefined) {
+        return undefined;
+      }
+      const trimmed = username.trim();
+      return { username: trimmed ? trimmed : undefined };
     }
     // The two inherited flags pass their raw value, not the effective one: the
     // prompt has to be able to say "Currently: Default (Off)" and to offer
@@ -663,14 +1078,23 @@ async function openPage(context: vscode.ExtensionContext): Promise<void> {
     return;
   }
   if (pick.page) {
-    await openPagePanel(context.extensionUri, pick.page.name, pick.page.url, canvasOf(pick.page));
+    await openPagePanel(
+      context,
+      pick.page.name,
+      pick.page.url,
+      canvasOf(pick.page),
+      pick.page.mirror,
+      pick.page.use
+    );
     return;
   }
   const url = await promptPageUrl();
   if (!url) {
     return;
   }
-  await openPagePanel(context.extensionUri, new URL(url).host || url, url);
+  // An ad-hoc URL is never mirrored: mirroring costs a browser process, and
+  // that is a decision to make when saving a page, not when typing a one-off.
+  await openPagePanel(context, new URL(url).host || url, url);
 }
 
 /** The entry's fixed canvas, when both dimensions are configured. */
@@ -746,7 +1170,32 @@ async function editPage(entry: PageEntry): Promise<void> {
   if (canvas === undefined) {
     return;
   }
-  await savePage(entry.scope, { name: name.trim(), url, ...canvas }, entry.name);
+  // Merged onto the STORED record, not rebuilt from a literal and not merged
+  // onto the entry. A literal deletes every field the wizard does not ask
+  // about — that is how editing a page used to silently drop `mirror`, and it
+  // would now drop the pre/post-use commands too. The entry is no better a
+  // base: it carries the trust-RESOLVED commands, so merging onto it in an
+  // untrusted workspace would write the stripped result back and erase them
+  // for good. Explicit undefined width/height is how "Auto" clears the canvas.
+  await savePage(
+    entry.scope,
+    applyPageEdit(storedPage(entry.scope, entry.name), {
+      name: name.trim(),
+      url,
+      width: canvas.width,
+      height: canvas.height,
+    }),
+    entry.name
+  );
+}
+
+/** The record as it is stored in one scope — the merge base for an edit. */
+function storedPage(
+  target: vscode.ConfigurationTarget,
+  name: string
+): SavedPage | undefined {
+  const config = vscode.workspace.getConfiguration('remoteVnc');
+  return basePagesFor(config.inspect<SavedPage[]>('pages'), target).find((p) => p.name === name);
 }
 
 async function deletePage(entry: PageEntry): Promise<void> {
@@ -1099,7 +1548,18 @@ function readConnection(
   const found = baseFor(config.inspect<SavedConnection[]>('connections'), target).find(
     (c) => c.name === name
   );
-  return toConnectionEntry(found, target);
+  return toConnectionEntry(found, target, vscode.workspace.isTrusted);
+}
+
+/** The record as it is stored in one scope — the merge base for an edit. */
+function storedConnection(
+  target: vscode.ConfigurationTarget,
+  name: string
+): SavedConnection | undefined {
+  const config = vscode.workspace.getConfiguration('remoteVnc');
+  return baseFor(config.inspect<SavedConnection[]>('connections'), target).find(
+    (c) => c.name === name
+  );
 }
 
 /**

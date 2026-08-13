@@ -91,9 +91,23 @@ export default async function ({ ok, eq }) {
         output.slice(0, 4000).includes(label),
         `${name} carries a banner naming ${label}`
       );
+      const notices = readFileSync(join(ROOT, 'THIRD-PARTY-NOTICES.md'), 'utf8');
       ok(
-        readFileSync(join(ROOT, 'THIRD-PARTY-NOTICES.md'), 'utf8').includes(label),
+        notices.includes(label),
         `THIRD-PARTY-NOTICES.md documents ${label}, bundled into ${name}`
+      );
+      // Naming the package is not the same as naming where it went. Each
+      // section opens with a "Compiled into `<outfile>`" locator, and a package
+      // that reaches a SECOND bundle leaves that line true-but-partial — which
+      // is what happened when the mirror's GIF path pulled gifenc into
+      // media/pageMirror.js and the notices went on naming media/webview.js
+      // alone. The banner check above cannot see it: that bundle got its
+      // banner, so nothing was failing.
+      const section = notices.split(/^## /m).find((s) => s.startsWith(`${label}\n`));
+      ok(section !== undefined, `THIRD-PARTY-NOTICES.md has a "## ${label}" section`);
+      ok(
+        section?.includes(name),
+        `the ${label} section names ${name} among the files it is compiled into`
       );
     }
 
@@ -126,6 +140,9 @@ export default async function ({ ok, eq }) {
       'dist/extension.js': ['ws'],
       'media/webview.js': ['@novnc/novnc', 'gifenc'],
       'media/cropEditor.js': [],
+      // Task 7: recording reuses media/recorder.ts unchanged, and its GIF path
+      // pulls gifenc into this bundle too.
+      'media/pageMirror.js': ['gifenc'],
     },
     'each bundle contains exactly the third-party packages it is expected to'
   );

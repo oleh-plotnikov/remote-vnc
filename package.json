@@ -38,7 +38,7 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "In an untrusted workspace, connections saved in workspace settings are ignored; only user-level (global) connections are offered."
+      "description": "In an untrusted workspace, connections and pages saved in workspace settings are ignored; only user-level (global) ones are offered. Their preUseCommand/postUseCommand, which run arbitrary shell commands, are never honoured from workspace or folder settings unless the workspace is trusted."
     }
   },
   "contributes": {
@@ -187,6 +187,34 @@
         "title": "Delete Page",
         "category": "Remote VNC",
         "icon": "$(trash)"
+      },
+      {
+        "command": "remoteVnc.screenshotPage",
+        "title": "Take Screenshot",
+        "category": "Remote VNC",
+        "icon": "$(device-camera)"
+      },
+      {
+        "command": "remoteVnc.recordPage",
+        "title": "Record / Stop Recording",
+        "category": "Remote VNC",
+        "icon": "$(record)"
+      },
+      {
+        "command": "remoteVnc.restartMirror",
+        "title": "Restart Mirrored Page",
+        "category": "Remote VNC",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "remoteVnc.screenshotFocused",
+        "title": "Take Screenshot (Focused Panel)",
+        "category": "Remote VNC"
+      },
+      {
+        "command": "remoteVnc.recordFocusedToggle",
+        "title": "Record / Stop Recording (Focused Panel)",
+        "category": "Remote VNC"
       }
     ],
     "configuration": {
@@ -211,7 +239,11 @@
                 "type": "string",
                 "description": "Hostname or IP address of the VNC server."
               },
-              "port": {
+              "username": {
+            "type": "string",
+            "description": "Account name, for servers whose security type asks for one. macOS offers Apple ARD/DH ahead of VNC Auth and noVNC takes the first type it supports from the server's list, so a Mac target needs a username as well as a password. Leave unset for classic password-only servers, which ignore it."
+          },
+          "port": {
                 "type": "integer",
                 "default": 5900,
                 "minimum": 1,
@@ -239,6 +271,21 @@
                 "type": "string",
                 "pattern": "^\\s*\\d{1,5}\\s*[x×]\\s*\\d{1,5}\\s*$",
                 "description": "Show only this WIDTHxHEIGHT area of the framebuffer (e.g. \"480x272\"). For servers that advertise a stride-padded framebuffer wider than the visible panel and render the padding as a dead black band. The \"connected\" line in the Remote VNC output logs the advertised size."
+              },
+              "preUseCommand": {
+                "type": "string",
+                "markdownDescription": "Shell command run BEFORE this connection is opened; the connection is only opened if it exits 0. **This executes an arbitrary shell command.** For entries that point at something that does not exist until it is started — a local dev server, a container, a device — so nothing has to be kept running all day for the entry to work. `${workspaceFolder}` and `${workspaceFolder:NAME}` are substituted; every other `${...}` is left for the shell. Runs in the first workspace folder. **Ignored** for entries saved in workspace or folder settings unless the workspace is trusted, because a cloned repository could otherwise run a command of its choosing the moment you open one of its entries; entries in your user settings are unaffected."
+              },
+              "postUseCommand": {
+                "type": "string",
+                "markdownDescription": "Shell command run when the LAST tab using this command closes, and when the window closes — the counterpart to `preUseCommand`, for taking the stack down again. **This executes an arbitrary shell command.** Started and not waited for, so it never delays closing a tab; its output goes to the \"Remote VNC\" output channel. Same `${workspaceFolder}` substitution and the same trust rule as `preUseCommand`: **ignored** for workspace- and folder-scoped entries unless the workspace is trusted."
+              },
+              "preUseTimeout": {
+                "type": "integer",
+                "default": 60,
+                "minimum": 5,
+                "maximum": 900,
+                "markdownDescription": "Seconds `preUseCommand` may run before it is given up on. On a timeout the command's whole process group is killed — not just the shell, so a build it started does not survive it — and the connection is not opened. Raise it for a command that has to build something on a cold cache."
               }
             }
           }
@@ -338,6 +385,11 @@
           "maximum": 65535,
           "markdownDescription": "Fixed TCP port for the loopback `WebSocket ↔ TCP` bridge. Needed in a local Dev Container, where an ephemeral port is not forwarded automatically: set a port here and list the same one in `forwardPorts`. A fixed port allows only one session at a time. `0` picks an ephemeral port, which is correct everywhere else."
         },
+        "remoteVnc.controlServer.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Start a loopback HTTP API (`127.0.0.1`, random port) that lists open panels and captures screenshots and recordings of them, for driving the extension from a script or an agent. Off by default: enabling it opens a capture surface guarded only by a random token written to a file readable solely by this user (`control-<pid>.json` in this extension's global storage, one per window). It has no keyboard, mouse or navigation input routes — the only action beyond capture is reloading a page panel."
+        },
         "remoteVnc.pages": {
           "type": "array",
           "default": [],
@@ -368,9 +420,49 @@
                 "minimum": 100,
                 "maximum": 16384,
                 "description": "Optional fixed canvas height (used together with width)."
+              },
+              "mirror": {
+                "type": "boolean",
+                "default": false,
+                "description": "Render this page as a live mirror of a headless Chrome tab instead of an iframe. Costs a browser process and makes the tab a picture rather than a document (no text selection, no in-page find) — in exchange its pixels can be screenshotted and recorded. Falls back to the iframe when no browser is found."
+              },
+              "preUseCommand": {
+                "type": "string",
+                "markdownDescription": "Shell command run BEFORE this page is opened; the page is only opened if it exits 0. **This executes an arbitrary shell command.** For entries that point at something that does not exist until it is started — a local dev server, a container, a device — so nothing has to be kept running all day for the entry to work. `${workspaceFolder}` and `${workspaceFolder:NAME}` are substituted; every other `${...}` is left for the shell. Runs in the first workspace folder. **Ignored** for entries saved in workspace or folder settings unless the workspace is trusted, because a cloned repository could otherwise run a command of its choosing the moment you open one of its entries; entries in your user settings are unaffected."
+              },
+              "postUseCommand": {
+                "type": "string",
+                "markdownDescription": "Shell command run when the LAST tab using this command closes, and when the window closes — the counterpart to `preUseCommand`, for taking the stack down again. **This executes an arbitrary shell command.** Started and not waited for, so it never delays closing a tab; its output goes to the \"Remote VNC\" output channel. Same `${workspaceFolder}` substitution and the same trust rule as `preUseCommand`: **ignored** for workspace- and folder-scoped entries unless the workspace is trusted."
+              },
+              "preUseTimeout": {
+                "type": "integer",
+                "default": 60,
+                "minimum": 5,
+                "maximum": 900,
+                "markdownDescription": "Seconds `preUseCommand` may run before it is given up on. On a timeout the command's whole process group is killed — not just the shell, so a build it started does not survive it — and the page is not opened. Raise it for a command that has to build something on a cold cache."
               }
             }
           }
+        },
+        "remoteVnc.chromePath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Browser binary used for pages saved with `mirror: true`. Leave empty to probe the usual locations for Chrome, Chromium and Edge — the DevTools protocol is the same for all three. In a remote window (WSL, SSH, containers) this path is on the remote machine, where the mirrored browser runs."
+        },
+        "remoteVnc.mirrorFrameRate": {
+          "type": "integer",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 30,
+          "markdownDescription": "Approximate frames per second streamed from a mirrored page while you are actively using it (mouse, keyboard or wheel input in roughly the last 2 seconds). Approximate because Chrome takes a divisor of its own paint rate rather than a frame rate, and a page that paints less often sends less. Trade-off: a lower value costs less CPU; a higher value (up to 30, the default) cuts the keystroke-to-paint delay that otherwise makes a mirrored page feel laggy or stuck when you type or click into it. Once you stop interacting, the mirror drops to roughly a third of this rate automatically — there is no separate setting for that — and it stops streaming entirely while the tab is open but not focused, so the CPU cost of a high value is only paid while you are actually driving the page. Do not expect a low value to fix a hot mirrored tab by itself — measured on one animated page, capping brought CPU from 52% down to 34%, not lower, because most of that load is Chrome compositing the page's own animation, which no frame-rate setting removes."
+        },
+        "remoteVnc.mirrorLaunchTimeout": {
+          "type": "integer",
+          "default": 45,
+          "minimum": 5,
+          "maximum": 120,
+          "markdownDescription": "Seconds to wait for a mirrored page's headless Chrome to announce its DevTools endpoint before giving up and falling back to a plain (non-capturable) page. In practice this is a budget for a cold browser start, not a network timeout — a first launch also creates a browser profile, and on a memory-constrained machine (swap under pressure) that can take much longer than it does on an idle one. Raise it if mirroring reliably fails with \"did not announce a DevTools endpoint\" but a manually started Chrome does eventually come up."
         }
       }
     },
@@ -478,6 +570,14 @@
         {
           "command": "remoteVnc.deletePage",
           "when": "false"
+        },
+        {
+          "command": "remoteVnc.screenshotPage",
+          "when": "false"
+        },
+        {
+          "command": "remoteVnc.recordPage",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -576,17 +676,46 @@
           "group": "inline@1"
         },
         {
-          "command": "remoteVnc.editPage",
+          "command": "remoteVnc.restartMirror",
           "when": "view == remoteVnc.pagesView && viewItem == remoteVnc.page",
           "group": "inline@2"
         },
         {
-          "command": "remoteVnc.deletePage",
+          "command": "remoteVnc.screenshotPage",
           "when": "view == remoteVnc.pagesView && viewItem == remoteVnc.page",
           "group": "inline@3"
+        },
+        {
+          "command": "remoteVnc.recordPage",
+          "when": "view == remoteVnc.pagesView && viewItem == remoteVnc.page",
+          "group": "inline@4"
+        },
+        {
+          "command": "remoteVnc.editPage",
+          "when": "view == remoteVnc.pagesView && viewItem == remoteVnc.page",
+          "group": "inline@5"
+        },
+        {
+          "command": "remoteVnc.deletePage",
+          "when": "view == remoteVnc.pagesView && viewItem == remoteVnc.page",
+          "group": "inline@6"
         }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "command": "remoteVnc.screenshotFocused",
+        "key": "ctrl+alt+s",
+        "mac": "cmd+alt+s",
+        "when": "remoteVnc.panelFocused"
+      },
+      {
+        "command": "remoteVnc.recordFocusedToggle",
+        "key": "ctrl+alt+r",
+        "mac": "cmd+alt+r",
+        "when": "remoteVnc.panelFocused"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run package",

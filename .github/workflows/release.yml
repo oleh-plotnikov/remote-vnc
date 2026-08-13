@@ -80,7 +80,7 @@ jobs:
           fi
 
       - name: Package VSIX
-        run: npx --yes @vscode/vsce package --no-dependencies
+        run: npx --yes @vscode/vsce@3.9.2 package --no-dependencies
 
       - name: Publish the GitHub release
         env:
@@ -93,7 +93,11 @@ jobs:
           fi
 
       # Both publishers read their token from the environment, so it never
-      # reaches a command line or the logs. A re-publish of a version already in
+      # reaches a command line or the logs. Both are also PINNED: `npx --yes
+      # <pkg>` resolves and executes whatever the registry serves at that
+      # moment, and it does so in a step that holds a publishing credential —
+      # so a compromised or typosquatted release of the publisher would run with
+      # the PAT in its environment. A version bump here should be deliberate. A re-publish of a version already in
       # a registry is not an error worth failing the run over, hence
       # --skip-duplicate: a manual run exists precisely to retry the other half.
       - name: Publish to the VS Code Marketplace
@@ -104,13 +108,22 @@ jobs:
             echo "::notice::VSCE_PAT is not set — skipping the Marketplace publish."
             exit 0
           fi
-          npx --yes @vscode/vsce publish --no-dependencies --skip-duplicate \
+          npx --yes @vscode/vsce@3.9.2 publish --no-dependencies --skip-duplicate \
             --packagePath ./*.vsix
 
       # Open VSX serves the editors that cannot use Microsoft's Marketplace:
       # VSCodium, Cursor, Windsurf, Gitpod. The namespace has to exist before the
       # first publish and creating it again is harmless, so it is not guarded.
+      #
+      # `if: !cancelled()` because the two registries must fail independently,
+      # which the skip-when-unset guards above only achieve for a token that is
+      # missing. A token that is *present and rejected* fails its step, and a
+      # failed step ends the job — so v1.3.0 went out with a 401 from Azure
+      # DevOps and every VSCodium user got nothing, over a credential for a
+      # registry they do not use. The job still reports failure, so the 401
+      # stays loud; only the blocking goes away.
       - name: Publish to Open VSX
+        if: ${{ !cancelled() }}
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |
@@ -119,6 +132,6 @@ jobs:
             exit 0
           fi
           publisher=$(node -p "require('./package.json').publisher")
-          npx --yes ovsx create-namespace "$publisher" || true
-          npx --yes ovsx publish --packagePath ./*.vsix --no-dependencies \
+          npx --yes ovsx@1.1.1 create-namespace "$publisher" || true
+          npx --yes ovsx@1.1.1 publish --packagePath ./*.vsix --no-dependencies \
             --skip-duplicate

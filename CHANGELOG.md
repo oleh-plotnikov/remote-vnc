@@ -4,6 +4,138 @@ All notable changes to **Remote VNC** are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-08-13
+
+### Security
+
+- **The mirrored browser no longer opens a debugging port.** It was launched
+  with `--remote-debugging-port=0`, which starts an HTTP/WebSocket server on
+  loopback that has no credential of any kind — CDP has no authentication to
+  switch on. The ephemeral port was obscurity rather than a defence, and Chrome
+  republishes it in `DevToolsActivePort` inside the profile directory anyway, so
+  any local process (including one under a *different* uid on a shared build
+  machine) could attach and then read `file://` through `Page.navigate`, run
+  script through `Runtime.evaluate`, or take the persistent profile's cookies.
+  The connection is now `--remote-debugging-pipe`: an inherited fd pair that no
+  unrelated process can open. Readiness moved with it — there is no endpoint
+  line to wait for on stderr, so the launch now waits on a `Browser.getVersion`
+  the browser can only answer once it is up, and `remoteVnc.mirrorLaunchTimeout`
+  still bounds that wait.
+
+- **A page URL can no longer inject markup into its own tab.** The resolved
+  frame origin was interpolated into the panel's `Content-Security-Policy` meta
+  tag without escaping, while the `src` beside it was escaped. A saved URL whose
+  authority contained a quote could therefore close the attribute and supply a
+  second, weaker policy — and a browser honours the first policy it parses, so
+  the `script-src 'nonce-…'` that would have contained the injection was the
+  thing being truncated.
+
+- **A folder path can no longer become shell code.** `${workspaceFolder}` was
+  substituted verbatim into a command that runs through `sh -c`. Directory names
+  may legally contain `$( )`, backticks and semicolons, so a cloned repository
+  or an unpacked archive could put shell syntax where a path was expected and
+  have a user-level `preUseCommand` — which Workspace Trust does not gate, by
+  design — carry it into a shell. Such a path is now refused with an error that
+  says so, rather than quoted: `$( )` and backticks expand inside double quotes
+  too, and single quotes are not portable to `cmd.exe`.
+
+- **The port-forwarding tunnel token no longer reaches the log.** Opening or
+  reloading a page wrote the resolved URL to the **Remote VNC** output channel,
+  and in a remote window that URL carries the tunnel's auth token in its query —
+  in a channel the bug-report template asks reporters to paste into a public
+  issue. The query is now redacted wholesale; the origin and path, which are the
+  diagnostic, are kept.
+
+- **A malformed control-server token no longer throws out of the request
+  handler.** The token check compared `String#length` (UTF-16 units) and then
+  handed the two buffers to `timingSafeEqual` (bytes). Node decodes header
+  values as latin1, so 48 raw high bytes passed the length gate as a 48-character
+  string whose UTF-8 buffer was 96 bytes, and `timingSafeEqual` threw
+  `RangeError` — before routing, with nothing to catch it. Byte lengths are now
+  compared, as the VNC bridge's equivalent check already did.
+
+- **An untrusted workspace can no longer choose where captures are written.**
+  `screenshotAction: 'save'` removes the save dialog and `screenshotDirectory`
+  names the destination; both were ordinary window-scoped settings, so a
+  `.vscode/settings.json` in a cloned repository could have every screenshot of
+  a live VNC session written silently into a directory of its choosing. Both are
+  now read through the same trust rule the saved connections and pages already
+  use: a workspace value applies only in a trusted workspace, a user-level value
+  always applies, and a dropped value is logged rather than silently ignored.
+
+- **The bridge rejects an unauthenticated client before the handshake.** The
+  token was checked on the established connection, so the bridge answered `101`
+  and only then closed with `1008`. WebSockets are not subject to the
+  same-origin policy, so any page in any browser on the machine could tell a
+  live bridge from a dead port that way — and with a fixed `remoteVnc.bridgePort`
+  without even scanning for one. No framebuffer bytes were ever exposed; what
+  leaked was the existence of a session.
+
+- **A mirrored tab says when the page has taken it elsewhere.** A mirror is a
+  real browser tab with no URL bar, and the page can navigate itself — a
+  redirect, a meta refresh, a link followed inside the mirror — while every
+  forwarded keystroke goes wherever it landed. The tab showed the saved entry's
+  name from open until close, and nothing else. It now appends the current
+  origin to the title once that origin differs from the one the entry was opened
+  at. The navigation is not blocked: a dev server redirect or an OAuth round
+  trip is ordinary, so this makes the move visible rather than impossible. Only
+  the origin is shown — a path and query we did not choose often carry tokens —
+  and route changes within the same origin leave the title alone, so the one
+  change worth noticing is not buried in noise.
+
+- **The release workflow pins its publishing tools.** `npx --yes @vscode/vsce`
+  and `npx --yes ovsx` resolved whatever the registry served at run time, in
+  steps holding a publishing credential and in the step that builds the `.vsix`
+  itself.
+
+### Added
+
+- **`preUseCommand` / `postUseCommand` on a saved page or connection.** An
+  entry can now bring its own target up before the tab loads and take it
+  down again when the last tab using it closes. Written for pages served
+  by a local app: the URL answers nothing until that app runs, so the
+  alternative was keeping a supervisor loop alive all day for a tab used
+  for minutes. The tab opens immediately showing the command running, and
+  the URL is loaded only once it exits 0; a non-zero exit or a timeout
+  leaves the tab saying what failed with the last lines of output, and
+  the full log in the **Remote VNC** output channel. `preUseTimeout`
+  (seconds, default 60) bounds the wait, and a timeout kills the
+  command's whole process group, so a build it started does not outlive
+  it. `${workspaceFolder}` and `${workspaceFolder:NAME}` are substituted.
+
+  These execute arbitrary shell commands, so they are gated on Workspace
+  Trust: a command on an entry saved in workspace or folder settings is
+  ignored — and logged as ignored — unless the workspace is trusted.
+  Entries in your user settings are unaffected. Everything else about the
+  entry works either way; only the commands are dropped.
+
+- **`username` on a saved connection.** A server whose security type asks
+  for an account name can now be given one. This is what a Mac needs:
+  macOS offers Apple ARD/DH (security type 30) ahead of VNC Auth (2), and
+  noVNC takes the first type it supports from the server's list — so
+  every connection to a Mac negotiated ARD and then failed, because only
+  a password was ever sent. Set it from **Username** in the connection's
+  edit menu, or as `username` in `remoteVnc.connections`. It is optional
+  and absent by default, so classic password-only servers are unchanged,
+  and the secret-storage key is untouched, so no saved password is lost.
+
+### Fixed
+
+- **Renaming a connection no longer strands its password.** The Secret Storage
+  key is derived from the connection's name *and* `host:port`, so editing any of
+  the three left the stored password under a key nothing could reach again: the
+  connection asked under the new key, **Forget Password** computed the new key
+  too, and deleting the entry deleted the new key — while the real password
+  stayed in the OS keyring with no way to remove it. The secret now moves with
+  the entry, written under the new key before the old one is deleted.
+
+- **"A password is required" when the server wanted a username.** noVNC
+  names the credentials it still needs; that list was discarded and every
+  case was reported as a missing password. Retyping the password could
+  never help, and nothing said so. The message now names what is actually
+  missing, and when the server asks for an account name that the
+  connection does not carry, it says where to set it.
+
 ## [1.3.0] - 2026-08-08
 
 ### Added

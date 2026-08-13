@@ -1,4 +1,5 @@
-import RFB from '@novnc/novnc';
+import RFB, { RFBCredentials } from '@novnc/novnc';
+import { captureChordAction } from '../src/captureChord';
 import { cropLayout, visibleSize } from '../src/cropLayout';
 import { RecordingFormat, RecordingStopReason } from '../src/recording';
 import { startRecording, Recorder } from './recorder';
@@ -16,6 +17,7 @@ type ExtensionMessage =
   | {
       type: 'connect';
       url: string;
+      username?: string;
       password?: string;
       options: RfbOptions;
       forceRaw?: boolean;
@@ -241,6 +243,31 @@ function post(message: unknown): void {
   vscode.postMessage(message);
 }
 
+// Claim the capture chords before noVNC can forward them to the remote
+// machine. The listener is on `window` in the CAPTURE phase, so it runs ahead
+// of noVNC's bubble-phase handler on the canvas no matter when RFB is
+// constructed — registering here, once, avoids racing the connection.
+//
+// Everything else falls through untouched, so the remote session keeps every
+// other key including Cmd+Alt+anything-else.
+//
+// Consequence worth knowing: because this bypasses VS Code's keybinding
+// dispatcher, rebinding the commands in Keyboard Shortcuts changes the chords
+// everywhere EXCEPT inside a focused VNC canvas, where these two stay fixed.
+window.addEventListener(
+  'keydown',
+  (event) => {
+    const action = captureChordAction(event);
+    if (!action) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    post({ type: 'chord', action });
+  },
+  true
+);
+
 function stopRecorder(reason: RecordingStopReason): void {
   // onStop/onError clear `recorder` and the badge; stop() is idempotent, so
   // every teardown path may call this unconditionally.
@@ -345,8 +372,20 @@ function connect(msg: Extract<ExtensionMessage, { type: 'connect' }>): void {
   }
 
   try {
+    // A username matters for the security types that ask for one — Apple's
+    // Screen Sharing offers ARD/DH (30) ahead of VNC Auth (2), and noVNC picks
+    // the first type it supports from the server's list, so a Mac target lands
+    // on ARD and needs both fields. Sending only a password there produced
+    // "credentialsrequired" and looked like a wrong password.
+    const credentials: RFBCredentials = {};
+    if (msg.username) {
+      credentials.username = msg.username;
+    }
+    if (msg.password) {
+      credentials.password = msg.password;
+    }
     rfb = new RFB(target, msg.url, {
-      credentials: msg.password ? { password: msg.password } : undefined,
+      credentials: Object.keys(credentials).length > 0 ? credentials : undefined,
       wsProtocols: ['binary'],
     });
   } catch (err) {
@@ -422,10 +461,18 @@ function connect(msg: Extract<ExtensionMessage, { type: 'connect' }>): void {
     rfb = undefined;
   });
 
-  rfb.addEventListener('credentialsrequired', () => {
+  rfb.addEventListener('credentialsrequired', (e: CustomEvent<{ types?: string[] }>) => {
     authFailed = true;
-    setStatus('Server requires a password — run the connect command again and provide one.', 'error');
-    post({ type: 'securityfailure', reason: 'A password is required.' });
+    // noVNC names the fields it still needs. Reporting them is the difference
+    // between "wrong password" and "this server also wants a username" — the
+    // latter is what an Apple Screen Sharing target asks for, and guessing at
+    // the password forever is the failure mode when the message hides it.
+    const needs = (e.detail?.types ?? []).filter((t) => t === 'username' || t === 'password');
+    const missing = needs.filter((t) => (t === 'username' ? !msg.username : !msg.password));
+    const wanted = (missing.length > 0 ? missing : needs).length > 0 ? (missing.length > 0 ? missing : needs) : ['password'];
+    const label = wanted.length === 2 ? 'a username and password' : `a ${wanted[0]}`;
+    setStatus(`Server requires ${label} — reconnect and provide it.`, 'error');
+    post({ type: 'securityfailure', reason: `The server requires ${label}.`, needs: wanted });
     // Tear down so the WebSocket and the live TCP connection are released
     // instead of hanging in the connecting state awaiting credentials.
     disconnect();

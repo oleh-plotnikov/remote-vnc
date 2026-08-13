@@ -177,7 +177,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ## gifenc
 
-Compiled into `media/webview.js`.
+Compiled into `media/webview.js` and `media/pageMirror.js` — both record GIFs
+through the same `media/recorder.ts`, so both carry the encoder and both carry
+the notice below in their banner.
 
 - Project: <https://github.com/mattdesl/gifenc>
 - Copyright (c) 2017 Matt DesLauriers
