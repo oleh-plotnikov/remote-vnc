@@ -136,7 +136,7 @@ export default async function ({ ok, eq }) {
   // never asked about. Editing a connection used to rewrite the record from a
   // literal, which silently dropped visibleArea and parkServerCursor.
   const saved = {
-    name: 'hmi',
+    name: 'barto',
     host: '10.0.0.5',
     port: 5900,
     visibleArea: '480x272',
@@ -198,13 +198,13 @@ export default async function ({ ok, eq }) {
   // The entry is spread from the stored record, not rebuilt from a literal of
   // known keys — so a field this version does not know about survives a round
   // trip through the editor instead of being silently dropped on the next save.
-  const stored = { name: 'hmi', host: '10.0.0.5', visibleArea: '480x272', futureField: 'keep me' };
+  const stored = { name: 'barto', host: '10.0.0.5', visibleArea: '480x272', futureField: 'keep me' };
   const entry = toConnectionEntry(stored, G, true);
   eq(entry.futureField, 'keep me', 'an unknown field survives the read');
   const roundTripped = applyConnectionEdit(entry, { host: '10.0.0.6' });
   eq(
     roundTripped,
-    { name: 'hmi', host: '10.0.0.6', visibleArea: '480x272', futureField: 'keep me' },
+    { name: 'barto', host: '10.0.0.6', visibleArea: '480x272', futureField: 'keep me' },
     'an unknown field survives read → edit → write, and scope does not'
   );
 

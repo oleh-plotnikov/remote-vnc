@@ -34,7 +34,7 @@ export default async function ({ ok, eq }) {
     globalThis.__configWorkspace = { remoteVnc: { screenshotDirectory: '/repo/exfil' } };
     // No dialog answer, so the save is cancelled — what matters is where it did
     // NOT go on the way there.
-    await saveCaptureBytes(bytes, 'shot.png', {}, 'screenshot', 'hmi');
+    await saveCaptureBytes(bytes, 'shot.png', {}, 'screenshot', 'barto');
     const wrote = (globalThis.__fsWrites ?? []).map((w) => w.path);
     eq(wrote, [], 'nothing is written to a directory an untrusted workspace chose');
     ok(
@@ -51,7 +51,7 @@ export default async function ({ ok, eq }) {
     reset();
     globalThis.__isTrusted = false;
     globalThis.__config = { remoteVnc: { screenshotDirectory: '/home/me/shots' } };
-    await saveCaptureBytes(bytes, 'shot.png', {}, 'screenshot', 'hmi');
+    await saveCaptureBytes(bytes, 'shot.png', {}, 'screenshot', 'barto');
     const wrote = (globalThis.__fsWrites ?? []).map((w) => w.path);
     eq(wrote, ['/home/me/shots/shot.png'], "a user-level directory is honoured even in an untrusted window");
     ok(
@@ -67,7 +67,7 @@ export default async function ({ ok, eq }) {
     reset();
     globalThis.__isTrusted = true;
     globalThis.__configWorkspace = { remoteVnc: { screenshotDirectory: '/project/shots' } };
-    await saveCaptureBytes(bytes, 'shot.png', {}, 'screenshot', 'hmi');
+    await saveCaptureBytes(bytes, 'shot.png', {}, 'screenshot', 'barto');
     const wrote = (globalThis.__fsWrites ?? []).map((w) => w.path);
     eq(wrote, ['/project/shots/shot.png'], 'a trusted workspace still gets its own capture directory');
   }

@@ -408,9 +408,9 @@ destructuring, and append inside the function:
 ```js
   // captureFilename generalises the screenshot name to any extension; the
   // png case must keep producing exactly the names screenshots always had.
-  eq(captureFilename('hmi', at, 'webm'), 'hmi-20260803-181530.webm', 'webm extension');
-  eq(captureFilename('hmi', at, 'gif'), 'hmi-20260803-181530.gif', 'gif extension');
-  eq(captureFilename('hmi', at, 'png'), screenshotFilename('hmi', at), 'png case matches screenshots');
+  eq(captureFilename('barto', at, 'webm'), 'barto-20260803-181530.webm', 'webm extension');
+  eq(captureFilename('barto', at, 'gif'), 'barto-20260803-181530.gif', 'gif extension');
+  eq(captureFilename('barto', at, 'png'), screenshotFilename('barto', at), 'png case matches screenshots');
   eq(captureFilename('a b/c:d', at, 'gif'), 'a-b-c-d-20260803-181530.gif', 'sanitising applies');
 ```
 
@@ -464,7 +464,7 @@ In `src/screenshot.ts`, generalise the name builder (replace the body of
 ```ts
 /**
  * File name for a capture of the given connection, e.g.
- * `hmi-20260803-181530.png` — just the label and a timestamp, nothing else;
+ * `barto-20260803-181530.png` — just the label and a timestamp, nothing else;
  * the label already says what was captured. It keeps unicode letters and
  * digits (labels are user-given and often non-ASCII) and collapses everything
  * else to a dash — path separators and other filesystem-hostile characters

@@ -134,7 +134,7 @@ export default async function ({ ok, eq }) {
   // stagedName: capture names are second-resolution, so two screenshots inside
   // one second would otherwise reuse a name and overwrite the file an open
   // crop tab is still showing.
-  eq(stagedName('hmi-20260803-181530.png', []), 'hmi-20260803-181530.png', 'a free name is taken as is');
+  eq(stagedName('barto-20260803-181530.png', []), 'barto-20260803-181530.png', 'a free name is taken as is');
   eq(stagedName('shot.png', ['shot.png']), 'shot-2.png', 'the suffix goes before the extension');
   eq(stagedName('shot.png', ['shot.png', 'shot-2.png', 'shot-3.png']), 'shot-4.png',
     'a collision chain keeps counting');

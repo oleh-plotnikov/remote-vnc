@@ -53,9 +53,9 @@ and carries its current value in `description`; picking one opens that field's
 dialog and returns to the menu.
 
 ```
-Edit Connection — hmi
+Edit Connection — barto
 ─────────────────────────────────────────
-$(edit) Name                 hmi
+$(edit) Name                 barto
 $(server) Address            10.0.0.5:5900
 $(sync) Auto-reconnect       On
 $(zap) Force raw encoding    Off

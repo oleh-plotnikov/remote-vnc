@@ -7,7 +7,7 @@ export default async function ({ ok, eq }) {
   // Filenames: label + timestamp only (no product prefix), filesystem-safe,
   // unicode labels kept.
   const at = new Date(2026, 7, 3, 18, 15, 30); // months are 0-based → August
-  eq(screenshotFilename('hmi', at), 'hmi-20260803-181530.png', 'plain label');
+  eq(screenshotFilename('barto', at), 'barto-20260803-181530.png', 'plain label');
   eq(screenshotFilename('café', at), 'café-20260803-181530.png', 'unicode label survives');
   eq(screenshotFilename('a b/c:d', at), 'a-b-c-d-20260803-181530.png', 'separators collapse to dashes');
   eq(screenshotFilename('///', at), 'session-20260803-181530.png', 'empty-after-sanitising falls back');
@@ -56,9 +56,9 @@ export default async function ({ ok, eq }) {
 
   // captureFilename generalises the screenshot name to any extension; the
   // png case must keep producing exactly the names screenshots always had.
-  eq(captureFilename('hmi', at, 'webm'), 'hmi-20260803-181530.webm', 'webm extension');
-  eq(captureFilename('hmi', at, 'gif'), 'hmi-20260803-181530.gif', 'gif extension');
-  eq(captureFilename('hmi', at, 'png'), screenshotFilename('hmi', at), 'png case matches screenshots');
+  eq(captureFilename('barto', at, 'webm'), 'barto-20260803-181530.webm', 'webm extension');
+  eq(captureFilename('barto', at, 'gif'), 'barto-20260803-181530.gif', 'gif extension');
+  eq(captureFilename('barto', at, 'png'), screenshotFilename('barto', at), 'png case matches screenshots');
   eq(captureFilename('a b/c:d', at, 'gif'), 'a-b-c-d-20260803-181530.gif', 'sanitising applies');
 
   // Home expansion: only a leading whole-segment tilde.

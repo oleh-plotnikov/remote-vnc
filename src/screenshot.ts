@@ -7,7 +7,7 @@
 
 /**
  * File name for a capture of the given connection, e.g.
- * `hmi-20260803-181530.png` — just the label and a timestamp, nothing else;
+ * `barto-20260803-181530.png` — just the label and a timestamp, nothing else;
  * the label already says what was captured. It keeps unicode letters and
  * digits (labels are user-given and often non-ASCII) and collapses everything
  * else to a dash — path separators and other filesystem-hostile characters

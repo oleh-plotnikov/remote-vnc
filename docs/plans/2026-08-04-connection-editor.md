@@ -76,7 +76,7 @@ line 4.
   // never asked about. Editing a connection used to rewrite the record from a
   // literal, which silently dropped visibleArea and parkServerCursor.
   const saved = {
-    name: 'hmi',
+    name: 'barto',
     host: '10.0.0.5',
     port: 5900,
     visibleArea: '480x272',
