@@ -4,6 +4,33 @@ All notable changes to **Remote VNC** are documented here. The format is based o
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-11-16
+
+### Added
+
+- **Quick commands.** Each session in **Active Sessions** now has a
+  *Quick commands* group of shell commands that run in an integrated
+  terminal with one click. One example is `ssh root@${host} reboot`, which
+  restarts a device without leaving the editor. Before this, restarting a
+  device meant opening a terminal and typing out its address. A command
+  belongs either to one saved connection (`quickCommands` on the
+  connection) or to every session (`remoteVnc.quickCommands`). `${host}`
+  and `${port}` are replaced with the session's VNC target. A host
+  containing shell metacharacters is refused rather than substituted.
+  Commands are added, edited and deleted from the tree. After a reboot,
+  auto-reconnect brings the session back with no further action.
+- A command asks before running. The dialog's **Run and Don't Ask Again**
+  button turns that off for that one command, and **Edit** turns it back
+  on. Both write `confirm` to the command in settings, so the choice is
+  visible and syncs.
+
+### Security
+
+- Quick commands follow the same trust rule as connections. A command
+  saved in workspace or folder settings is ignored unless the workspace is
+  trusted, so a cloned repository cannot add a command of its own under
+  your sessions. `remoteVnc.quickCommands` is declared `restricted`.
+
 ## [1.4.0] - 2026-08-13
 
 ### Security

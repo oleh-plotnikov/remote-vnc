@@ -8,18 +8,18 @@ export default async function ({ ok, eq }) {
 
   eq(r.list(), [], 'starts empty');
 
-  r.add('a', 'Alpha');
+  r.add('a', 'Alpha', '10.0.0.5', 5901);
   eq(
     r.list(),
-    [{ id: 'a', label: 'Alpha', status: 'connected', recording: false }],
-    'add registers id+label, status connected, recording false'
+    [{ id: 'a', label: 'Alpha', host: '10.0.0.5', port: 5901, status: 'connected', recording: false }],
+    'add registers id+label+target, status connected, recording false'
   );
   eq(changes, 1, 'add fires change');
 
   r.setStatus('a', 'reconnecting');
   eq(
     r.list(),
-    [{ id: 'a', label: 'Alpha', status: 'reconnecting', recording: false }],
+    [{ id: 'a', label: 'Alpha', host: '10.0.0.5', port: 5901, status: 'reconnecting', recording: false }],
     'setStatus updates status'
   );
   eq(changes, 2, 'setStatus fires change');
@@ -33,7 +33,7 @@ export default async function ({ ok, eq }) {
   r.setRecording('a', true);
   eq(
     r.list(),
-    [{ id: 'a', label: 'Alpha', status: 'reconnecting', recording: true }],
+    [{ id: 'a', label: 'Alpha', host: '10.0.0.5', port: 5901, status: 'reconnecting', recording: true }],
     'setRecording flips the flag'
   );
   eq(changes, 3, 'setRecording fires change');

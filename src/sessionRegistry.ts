@@ -3,6 +3,10 @@ export type SessionStatus = 'connected' | 'reconnecting';
 export interface SessionInfo {
   id: string;
   label: string;
+  /** VNC target, so the tree can find the saved connection a session
+   *  belongs to (labels are not unique: two sessions of one target share one). */
+  host: string;
+  port: number;
   status: SessionStatus;
   recording: boolean;
 }
@@ -15,12 +19,12 @@ export interface SessionInfo {
 export class SessionRegistry {
   private readonly items = new Map<
     string,
-    { label: string; status: SessionStatus; recording: boolean }
+    Omit<SessionInfo, 'id'>
   >();
   private listener: (() => void) | undefined;
 
-  add(id: string, label: string): void {
-    this.items.set(id, { label, status: 'connected', recording: false });
+  add(id: string, label: string, host: string, port: number): void {
+    this.items.set(id, { label, host, port, status: 'connected', recording: false });
     this.listener?.();
   }
 
@@ -47,12 +51,7 @@ export class SessionRegistry {
   }
 
   list(): SessionInfo[] {
-    return [...this.items].map(([id, { label, status, recording }]) => ({
-      id,
-      label,
-      status,
-      recording,
-    }));
+    return [...this.items].map(([id, item]) => ({ id, ...item }));
   }
 
   onChange(listener: () => void): void {

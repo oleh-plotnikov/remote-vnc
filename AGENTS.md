@@ -11,7 +11,7 @@ npm install
 npm run build      # bundle all three outputs once
 npm run watch      # rebuild on change; reload the window to pick changes up
 npm run typecheck  # tsc --noEmit
-npm test           # 274 assertions, plain Node, no framework
+npm test           # 1142 assertions, plain Node, no framework
 npm run package    # production build (minified, no sourcemaps)
 ```
 
@@ -26,6 +26,8 @@ npm run package    # production build (minified, no sourcemaps)
 | `src/vncBridge.ts` | The WebSocket-to-TCP bridge — the security-sensitive part |
 | `src/pagePanel.ts` | The "Web Pages" editor tabs |
 | `src/*View.ts` | Activity Bar tree views |
+| `src/quickCommands.ts` | Quick-command parsing, layering and `${host}` expansion; kept free of the `vscode` runtime |
+| `src/quickCommandActions.ts` | Run (terminal), add, edit and delete for quick commands |
 | `media/webview.ts` | Runs inside the panel; imports noVNC. Never touches VS Code APIs |
 | `src/cropEditor.ts` | The screenshot crop editor's host half; `media/cropEditor.ts` is its webview |
 | `src/screenshotCrop.ts` | Crop geometry, imported by both halves, so it stays free of `vscode` and of Node globals |

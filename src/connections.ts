@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import type { QuickCommand } from './quickCommands';
 
 import { logger } from './log';
 import {
@@ -27,6 +28,8 @@ export interface SavedConnection extends UseCommandsSource {
   scaleViewport?: boolean;
   /** Visible panel area "WxH" when the server advertises a padded framebuffer. */
   visibleArea?: string;
+  /** Shell commands offered under this connection's active session. */
+  quickCommands?: QuickCommand[];
 }
 
 /**

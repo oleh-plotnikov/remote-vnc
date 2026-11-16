@@ -215,6 +215,30 @@
         "command": "remoteVnc.recordFocusedToggle",
         "title": "Record / Stop Recording (Focused Panel)",
         "category": "Remote VNC"
+      },
+      {
+        "command": "remoteVnc.runQuickCommand",
+        "title": "Run",
+        "category": "Remote VNC",
+        "icon": "$(play)"
+      },
+      {
+        "command": "remoteVnc.addQuickCommand",
+        "title": "Add Quick Command…",
+        "category": "Remote VNC",
+        "icon": "$(add)"
+      },
+      {
+        "command": "remoteVnc.editQuickCommand",
+        "title": "Edit Quick Command…",
+        "category": "Remote VNC",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "remoteVnc.deleteQuickCommand",
+        "title": "Delete Quick Command",
+        "category": "Remote VNC",
+        "icon": "$(trash)"
       }
     ],
     "configuration": {
@@ -286,6 +310,60 @@
                 "minimum": 5,
                 "maximum": 900,
                 "markdownDescription": "Seconds `preUseCommand` may run before it is given up on. On a timeout the command's whole process group is killed — not just the shell, so a build it started does not survive it — and the connection is not opened. Raise it for a command that has to build something on a cold cache."
+              },
+              "quickCommands": {
+                "type": "array",
+                "markdownDescription": "Shell commands offered under this connection's active session (e.g. `ssh root@${host} reboot`), run on click in an integrated terminal. A command here overrides a `remoteVnc.quickCommands` entry of the same name. Like the connection itself, ignored when saved in workspace or folder settings of an untrusted workspace.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "command"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "description": "Label shown under the session in Active Sessions."
+                    },
+                    "command": {
+                      "type": "string",
+                      "markdownDescription": "Command line run in an integrated terminal. `${host}` and `${port}` are replaced with the session's VNC target; any other `${…}` is left for the shell. **This executes an arbitrary shell command.**"
+                    },
+                    "confirm": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "Ask for confirmation before running."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "remoteVnc.quickCommands": {
+          "type": "array",
+          "default": [],
+          "restricted": true,
+          "markdownDescription": "Shell commands offered under **every** active session in the Active Sessions view, run on click in an integrated terminal. `${host}` and `${port}` are replaced with the session's VNC target. A saved connection's own `quickCommands` entry of the same name takes precedence. Values from workspace or folder settings are ignored unless the workspace is trusted. In a remote window the terminal — and so the command — runs on the remote.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "command"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Label shown under the session in Active Sessions."
+              },
+              "command": {
+                "type": "string",
+                "markdownDescription": "Command line run in an integrated terminal. `${host}` and `${port}` are replaced with the session's VNC target; any other `${…}` is left for the shell. **This executes an arbitrary shell command.**"
+              },
+              "confirm": {
+                "type": "boolean",
+                "default": true,
+                "description": "Ask for confirmation before running."
               }
             }
           }
@@ -578,6 +656,22 @@
         {
           "command": "remoteVnc.recordPage",
           "when": "false"
+        },
+        {
+          "command": "remoteVnc.runQuickCommand",
+          "when": "false"
+        },
+        {
+          "command": "remoteVnc.addQuickCommand",
+          "when": "false"
+        },
+        {
+          "command": "remoteVnc.editQuickCommand",
+          "when": "false"
+        },
+        {
+          "command": "remoteVnc.deleteQuickCommand",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -699,6 +793,26 @@
           "command": "remoteVnc.deletePage",
           "when": "view == remoteVnc.pagesView && viewItem == remoteVnc.page",
           "group": "inline@6"
+        },
+        {
+          "command": "remoteVnc.addQuickCommand",
+          "when": "view == remoteVnc.sessionsView && viewItem == remoteVnc.quickCommands",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteVnc.runQuickCommand",
+          "when": "view == remoteVnc.sessionsView && viewItem == remoteVnc.quickCommand",
+          "group": "inline@1"
+        },
+        {
+          "command": "remoteVnc.editQuickCommand",
+          "when": "view == remoteVnc.sessionsView && viewItem == remoteVnc.quickCommand",
+          "group": "inline@2"
+        },
+        {
+          "command": "remoteVnc.deleteQuickCommand",
+          "when": "view == remoteVnc.sessionsView && viewItem == remoteVnc.quickCommand",
+          "group": "inline@3"
         }
       ]
     },

@@ -178,7 +178,7 @@ export class VncSessionManager {
       },
     });
     this.sessions.set(id, session);
-    this.registry.add(id, request.label);
+    this.registry.add(id, request.label, request.host, request.port);
     // A VNC session's pixels are always ours (noVNC paints them into the
     // webview's own canvas) — unlike an unmirrored page tab, so `mirrored`
     // is unconditionally true here. Capture delegates to the session's

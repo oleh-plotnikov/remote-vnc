@@ -15,7 +15,21 @@ import {
 } from './connections';
 import { parseVisibleArea } from './cropLayout';
 import { ConnectionsTreeProvider, ConnectionTreeItem } from './connectionsView';
-import { SessionsTreeProvider, SessionTreeItem } from './sessionsView';
+import {
+  SessionsTreeProvider,
+  SessionTreeItem,
+  QuickCommandItem,
+  QuickCommandsGroupItem,
+} from './sessionsView';
+import {
+  ConnectionStore,
+  addQuickCommand,
+  deleteQuickCommand,
+  editQuickCommand,
+  runQuickCommand,
+  sessionCommandsLookup,
+  trackTerminalClose,
+} from './quickCommandActions';
 import { SavedPage, PageEntry, applyPageEdit, collectPages, basePagesFor, isValidPageUrl } from './pages';
 import { PagesTreeProvider, PageTreeItem } from './pagesView';
 import {
@@ -79,7 +93,12 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   const connectionsProvider = new ConnectionsTreeProvider();
-  const sessionsProvider = new SessionsTreeProvider(manager);
+  const connectionStore: ConnectionStore = {
+    list: getSavedConnections,
+    read: storedConnection,
+    save: saveConnection,
+  };
+  const sessionsProvider = new SessionsTreeProvider(manager, sessionCommandsLookup(connectionStore));
   const pagesProvider = new PagesTreeProvider();
   context.subscriptions.push(
     connectionsProvider,
@@ -186,6 +205,34 @@ export function activate(context: vscode.ExtensionContext): void {
         void vscode.window.showInformationMessage(
           `Remote VNC: "${item.entry.name}" is not connected — connect first, then record.`
         );
+      }
+    }),
+    // Quick commands — shell commands run in a terminal against a session's
+    // host, listed under the session in Active Sessions.
+    trackTerminalClose(),
+    vscode.commands.registerCommand('remoteVnc.runQuickCommand', (item?: QuickCommandItem) => {
+      if (item) {
+        void runQuickCommand(connectionStore, item);
+      }
+    }),
+    vscode.commands.registerCommand(
+      'remoteVnc.addQuickCommand',
+      // The group's inline `+` passes the group; the placeholder row passes
+      // the same group as its command argument.
+      (item?: QuickCommandsGroupItem) => {
+        if (item) {
+          void addQuickCommand(connectionStore, item);
+        }
+      }
+    ),
+    vscode.commands.registerCommand('remoteVnc.editQuickCommand', (item?: QuickCommandItem) => {
+      if (item) {
+        void editQuickCommand(connectionStore, item);
+      }
+    }),
+    vscode.commands.registerCommand('remoteVnc.deleteQuickCommand', (item?: QuickCommandItem) => {
+      if (item) {
+        void deleteQuickCommand(connectionStore, item);
       }
     }),
     // Web pages — saved URLs (design mockups, local dev servers) opened as

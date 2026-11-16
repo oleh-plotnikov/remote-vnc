@@ -53,6 +53,12 @@ if you would rather install it by hand.
   one widget that matters (`remoteVnc.screenshotCropEditor`). The same tab
   copies the selection — or the whole image — straight to the clipboard,
   without cropping and without saving a file.
+- **Quick commands** — shell commands listed under each session in
+  **Active Sessions** and run in an integrated terminal with one click, such
+  as `ssh root@${host} reboot` for a device that has to be restarted. Add one
+  with the `+` on a session's *Quick commands* group, either for that saved
+  connection only or for every session (`remoteVnc.quickCommands`). They ask
+  before running unless told not to.
 
 ## Usage
 
@@ -78,7 +84,8 @@ Open the Command Palette (`Ctrl/Cmd+Shift+P`) and run one of:
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `remoteVnc.connections` | `[]` | Saved connections (`name`, `host`, `port`, optional `autoReconnect`, `forceRawEncoding`, `parkServerCursor`, `scaleViewport`, `visibleArea`). |
+| `remoteVnc.connections` | `[]` | Saved connections (`name`, `host`, `port`, optional `autoReconnect`, `forceRawEncoding`, `parkServerCursor`, `scaleViewport`, `visibleArea`, `quickCommands`). |
+| `remoteVnc.quickCommands` | `[]` | Quick commands shown under every session (`name`, `command`, optional `confirm`). A connection's own `quickCommands` entry of the same name takes precedence. |
 | `remoteVnc.autoReconnect` | `true` | Reconnect every 10 s after an unexpected drop. A connection's own `autoReconnect` overrides this. Stops on auth failure or manual disconnect. |
 | `remoteVnc.viewOnly` | `false` | Ignore local input. |
 | `remoteVnc.scaleViewport` | `true` | Scale the framebuffer to fit the panel. |
@@ -104,6 +111,26 @@ staged copy, so it disappears after seven days unless you **Save** it, and
 **Revert** undoes a crop only for as long as the tab stays open. An image
 preview of the same file open in another editor group keeps showing the
 pre-crop image until it is closed and reopened.
+
+Quick commands run in a terminal named after the session and the command,
+so an SSH password or host-key prompt can be answered there. `${host}` and
+`${port}` are replaced with the session's VNC target, and every other `${…}`
+is left for the shell. A host containing shell metacharacters is refused
+rather than substituted. The terminal runs where the extension host does, so
+under Remote-SSH, WSL or a container the command runs on the remote, the
+same machine that opens the VNC connection.
+
+```jsonc
+"remoteVnc.connections": [
+  {
+    "name": "Panel",
+    "host": "192.168.1.10",
+    "quickCommands": [
+      { "name": "Reboot", "command": "ssh root@${host} reboot" }
+    ]
+  }
+]
+```
 
 **Copy** is the exception: it writes no file at all. With a selection it
 copies that region, without one the whole image, and the button says which.
